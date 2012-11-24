@@ -31,7 +31,9 @@ _builtin_unsigned_int = ['uint8',
 
 _builtin_real = ['float', 'double']
 
-_builtin_special = [None, 'pred']
+_builtin_special = ['pred', 'address']
+
+_builtin_void = ['void']
 
 _builtin_int = _builtin_signed_int + _builtin_unsigned_int
 
@@ -55,6 +57,15 @@ def _build_implicit_cast_table():
             cset = conv[s] = conv.get(s, set())
             cset.add(d)
 
+    # allow address to cast to and from any integer type
+
+    for group in [_builtin_signed_int, _builtin_unsigned_int]:
+        for intty in group:
+            cset = conv['address'] = conv.get('address', set())
+            cset.add(intty)
+            cset = conv[intty] = conv.get(intty, set())
+            cset.add('address')
+
     return conv
 
 _builtin_implicit_cast = _build_implicit_cast_table()
@@ -68,7 +79,7 @@ class TypeSystem(object):
     builtin_int = _builtin_signed_int + _builtin_unsigned_int
     builtin_special = _builtin_special
 
-    builtins = _builtin_special + _builtin_int + _builtin_real
+    builtins = _builtin_special + _builtin_int + _builtin_real + _builtin_void
 
     builtin_implicit_cast = _build_implicit_cast_table()
 
@@ -168,8 +179,18 @@ class Context(object):
     def get_function(self, name):
         return self.__functions[name]
 
+    def list_intrinsics(self):
+        return self.__intrinsics.values()
+
+    def list_functions(self):
+        return self.__functions.values()
+
 
 class Callable(object):
+
+    _definition_type_ = None
+    _kind_ = None
+
     def __init__(self, context, name):
         '''
         Do not invoke this directly.  Always use Context.add_intrinsic()
@@ -183,14 +204,14 @@ class Callable(object):
         key = tuple(argtys)
         if key in self.__defs:
             raise DefinitionError(key)
-        defn = self.__defs[key] = Definition(self, retty, argtys)
+        defn = self.__defs[key] = self._definition_type_(self, retty, argtys)
         return defn
 
     def has_definition(self, argtys):
         return tuple(argtys) in self.__defs
 
     def iter_definitions(self):
-        return self.__defs.iteritems()
+        return self.__defs.itervalues()
 
     def list_definitions(self):
         return list(self.iter_definitions())
@@ -203,6 +224,16 @@ class Callable(object):
     def context(self):
         return self.__context
 
+    def __str__(self):
+        defns = self.list_definitions()
+        if not defns:
+            # empty definitions
+            return "%s %s {}" % (self.kind, self.name)
+        else:
+            buf = []
+            for defn in defns:
+                buf.append(str(defn))
+            return '\n'.join(buf)
 
 class Definition(object):
     def __init__(self, parent, retty, argtys):
@@ -243,17 +274,41 @@ class Definition(object):
     def args(self):
         return self.__argtys
 
+    @property
+    def kind(self):
+        return self._kind_
+
+class FunctionDefinition(Definition):
+    _kind_ = 'func'
+
+    def __str__(self):
+        if not self.is_declaration:
+            return str(self.implementation)
+        else:
+            return "%s %s(%s)" % (self.return_type or 'void',
+                                  self.name,
+                                  ', '.join(self.args))
+
+class IntrinsicDefinition(Definition):
+    _kind_ = 'intr'
+
+    def __str__(self):
+        if not self.is_declaration:
+            return str(self.implementation)
+        else:
+            if self.return_type:
+                retty = '-> %s' % self.return_type
+            else:
+                retty = ''
+            return "intrinsic %s(%s) %s" % (self.name,
+                                           ', '.join(self.args),
+                                           retty)
 
 class Intrinsic(Callable):
-    def __init__(self, context, name):
-        name = "intr.%s" % name
-        super(Intrinsic, self).__init__(context, name)
+    _definition_type_ = IntrinsicDefinition
 
 class Function(Callable):
-    def __init__(self, context, name):
-        name = "@%s" % name
-        super(Function, self).__init__(context, name)
-
+    _definition_type_ = FunctionDefinition
 
 class FunctionImplementation(object):
     def __init__(self, funcdef):
@@ -306,12 +361,15 @@ class FunctionImplementation(object):
         return self.__consts
 
     def __str__(self):
+        '''Pretty print the whole implementation 
+        using a custom IR similar to LLVM IR.
+        '''
         buf = []
 
         namemap = {}
         template = "{:>20s}\t{:<20s}"
         
-        buf.append('define\t%s\t%s (' % (self.return_type, self.name))
+        buf.append('define %s %s (' % (self.return_type or 'void', self.name))
         for i, arg in enumerate(self.args):
             name = namemap[id(arg)] = arg.name or ("%%arg_%d" % i)
             buf.append(template.format(arg.type, name))
@@ -352,7 +410,7 @@ class FunctionImplementation(object):
             term = bb.terminator
             idx_of_bb = lambda x: ("block_%d" % self.basic_blocks.index(x))
             if isinstance(term, ConditionBranch):
-                term_template = "{:>12s} {:<15s} [{:s}, {:s}]"
+                term_template = "{:>12s} {:5s} [{:s}, {:s}]"
                 buf.append(term_template.format('br',
                                                 namemap[id(term.condition)],
                                                 idx_of_bb(term.true_branch),
@@ -361,6 +419,11 @@ class FunctionImplementation(object):
                 term_template = "{:>12s} {:s}"
                 buf.append(term_template.format('br',
                                                 idx_of_bb(term.destination)))
+            else:
+                term_template = "{:>12s} {:s}"
+                buf.append(term_template.format('return',
+                                                namemap[id(term.value)]))
+
 
 
         buf.append('}')
@@ -407,6 +470,14 @@ class Branch(object):
     @property
     def destination(self):
         return self.__dest
+
+class Return(Operation):
+    def __init__(self, value):
+        self.__value = value
+
+    @property
+    def value(self):
+        return self.__value
 
 class ConditionBranch(Branch):
     def __init__(self, condition, truebr, falsebr):

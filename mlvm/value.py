@@ -27,15 +27,12 @@ class Operation(Value):
         return self.__operands
 
     def __str__(self):
-        return "%s %s" % (self.name, ', '.join(map(str, self.operands)))
-
-class Return(Operation):
-    def __init__(self, value):
-        super(Return, self).__init__('return', None, (value,))
+        return "<%s %x>" % (self.name, id(self))
 
 class Cast(Operation):
     def __init__(self, value, totype):
-        super(Cast, self).__init__('cast', totype, (value,))
+        super(Cast, self).__init__('cast.%s.%s' % (value.type, totype),
+                                   totype, (value,))
 
 class BinaryOperation(Operation):
     pass
@@ -75,11 +72,7 @@ class Variable(Value):
         return self.__name
 
     def __str__(self):
-        if self.initializer is not None:
-            return "{:<15s} {:<25s} = {:s}".format(self.type, self.name,
-                                                  self.initializer)
-        else:
-            return "{:<15s} {:s}".format(self.type, self.name)
+        return '<Variable %s %s>' % (self.type, self.name)
 
     def _set_initializer(self, value):
         '''
@@ -105,6 +98,9 @@ class Argument(Value):
     def attributes(self):
         return self.__attrs
 
+    def __str__(self):
+        return '<Argument %s %s>' % (self.type, self.name)
+
     def __get_name(self):
         return self.__name
 
@@ -128,12 +124,13 @@ class Constant(Value):
         return self.__name
 
     def __str__(self):
-        return "{:<15s} {:<25s} = {:s}".format("const %s" % self.type, self.name,
-                                              str(self.constant))
+        return '<Constant %s %s>' % (self.type, self.constant)
+
 
 class Call(Operation):
     def __init__(self, callee, args):
-        super(Call, self).__init__(callee.name, callee.return_type, args)
+        name = 'call.%s %s' % (callee.kind, callee.name)
+        super(Call, self).__init__(name, callee.return_type, args)
         self.__callee = callee
 
     @property

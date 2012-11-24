@@ -1,3 +1,5 @@
+__all__ = ['TypeSystem', 'Builder', 'Context', 'FunctionImplementation']
+
 from .context import *
 from .value import *
 import weakref
@@ -59,7 +61,8 @@ class Builder(object):
         # find defintion
         possible = []
         ts = self.context.type_system
-        for argtys, defn in callee.list_definitions():
+        for defn in callee.list_definitions():
+            argtys = defn.args
             if calltys == argtys:
                 break
             else:
@@ -101,7 +104,7 @@ class Builder(object):
             else:
                 raise InvalidCast(val.type, retty)
         op = Return(val)
-        self.basic_block.operations.append(op)
+        self.basic_block.terminator = op
         return op
 
     def cast(self, val, ty):
@@ -182,29 +185,4 @@ class Builder(object):
             return self.call(intr, *args)
         return _call
 
-class ControlFlowBuilder(object):
-    def __init__(self, builder):
-        self.__builder = builder
-
-    @property
-    def basic_block(self):
-        return self.__builder.basic_block
-
-    @property
-    def implementation(self):
-        return self.basic_block.implementation
-
-    def for_range(self, idx, stop, step):
-        cur = self.__builder
-        cond = Builder(self.implementation.append_basic_block())
-        body = Builder(self.implementation.append_basic_block())
-        end = Builder(self.implementation.append_basic_block())
-
-        cur.branch(cond)
-
-        # condition
-        pred = cond.compare('<', idx, stop)
-        cbr = cond.condition_branch(pred, body, end)
-
-        
 
