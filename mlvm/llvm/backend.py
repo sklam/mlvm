@@ -114,7 +114,8 @@ class LLVMTranslator(object):
         return lc.Module.new("mod_%s" % name)
 
     def _build_function(self, module):
-        name = self._mangle_symbol(self.funcdef.name)
+        rawname = '%s.%s' % (self.funcdef.name, '.'.join(self.funcdef.args))
+        name = self._mangle_symbol(rawname)
         lretty = self._to_llvm_type(self.funcdef.return_type, 'return_type')
         largtys = [self._to_llvm_type(x, 'argument')
                    for x in self.funcdef.args]
