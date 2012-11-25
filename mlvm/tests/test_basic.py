@@ -35,6 +35,7 @@ class ArrayType(TypeImplementation):
 
     def ctype_argument(self, backend, value):
         from ctypes import c_void_p, cast
+        from mlvm.utils import MEMORYVIEW_DATA_OFFSET
 
         if isinstance(value, self.ctype(backend)):
             return value
@@ -42,7 +43,7 @@ class ArrayType(TypeImplementation):
             view = memoryview(value)
             assert view.ndim == 1
             ctelem = self.ctype(backend)
-            address = cast(c_void_p(id(view) + 3 * backend.address_width),
+            address = cast(c_void_p(id(view) + MEMORYVIEW_DATA_OFFSET),
                            POINTER(c_uint64))[0]
             data = cast(c_void_p(address), ctelem)
             return data
@@ -132,10 +133,9 @@ def frontend(context):
     body.branch(cond.basic_block)
 
     #end
-
     end.ret(idx)
-
     return funcdef
+
 
 def backend(context, funcdef):
     print funcdef
@@ -178,10 +178,7 @@ def backend(context, funcdef):
     assert n == A.shape[0]
 
     Gold = (A + B) * 3.14
-    
     assert np.allclose(Gold, C)
-
-
 
 
 def array_load_impl(lfunc):

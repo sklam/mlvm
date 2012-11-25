@@ -4,15 +4,14 @@ import ctypes
 from ctypes import c_float, c_double, c_size_t
 
 import llvm.core as lc
-import llvm.ee as le
 import llvm.passes as lp
 
 from mlvm.backend import *
 from mlvm.context import (_builtin_signed_int, _builtin_unsigned_int,
                           _builtin_real, _builtin_special,
                           ConditionBranch, Branch, Return)
+from mlvm.utils import ADDRESS_WIDTH
 
-ADDRESS_WIDTH = 0
 INLINER_THRESHOLD = 1000
 
 class SimpleTypeImplementation(TypeImplementation):
@@ -534,11 +533,3 @@ class LLVMBackend(object):
 def _builder_module(builder):
     module = builder.basic_block.function.module
     return module
-
-def _detect_native_address_width():
-    global ADDRESS_WIDTH
-    dummy = lc.Module.new('dummy')
-    td = le.EngineBuilder.new(dummy).select_target().target_data
-    ADDRESS_WIDTH = td.pointer_size
-
-_detect_native_address_width()
