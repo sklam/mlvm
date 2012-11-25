@@ -1,6 +1,8 @@
 from mlvm.ir import *
 from mlvm.jit import *
-from mlvm.backend import LLVMBackend, TypeImplementation
+from mlvm.backend import TypeImplementation
+from mlvm.llvm.jit import *
+from mlvm.llvm.backend import *
 import llvm
 import numpy as np
 from ctypes import *
