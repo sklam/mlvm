@@ -47,6 +47,7 @@ class JIT(object):
         else:
             codegen = self.__backends[backend]
             unit = codegen.compile(funcdef)
+            unit = codegen.link(unit)
             callable = self.manager.build_function(codegen, funcdef, unit,
                                                    **attrs)
         return JITFunction(self, callable, funcdef)

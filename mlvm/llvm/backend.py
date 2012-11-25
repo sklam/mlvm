@@ -3,9 +3,9 @@ __all__ = ['LLVMBackend']
 import ctypes
 from ctypes import c_float, c_double, c_size_t
 
-from llvm.core import *
-from llvm.ee import *
-from llvm.passes import *
+import llvm.core as lc
+import llvm.ee as le
+import llvm.passes as lp
 
 from mlvm.backend import *
 from mlvm.context import (_builtin_signed_int, _builtin_unsigned_int,
@@ -54,11 +54,11 @@ class SimpleTypeImplementation(TypeImplementation):
 
 class IntegerImplementation(SimpleTypeImplementation):
     def constant(self, builder, value):
-        return Constant.int(self._type, value)
+        return lc.Constant.int(self._type, value)
 
 class RealImplementation(SimpleTypeImplementation):
     def constant(self, builder, value):
-        return Constant.real(self._type, value)
+        return lc.Constant.real(self._type, value)
 
 
 class LLVMTranslator(object):
@@ -111,21 +111,21 @@ class LLVMTranslator(object):
     def _build_module(self):
         name = "%s.%s" % (self.funcdef.name,
                           '.'.join(map(str, self.funcdef.args)))
-        return Module.new("mod_%s" % name)
+        return lc.Module.new("mod_%s" % name)
 
     def _build_function(self, module):
         name = self._mangle_symbol(self.funcdef.name)
         lretty = self._to_llvm_type(self.funcdef.return_type, 'return_type')
         largtys = [self._to_llvm_type(x, 'argument')
                    for x in self.funcdef.args]
-        fty = Type.function(lretty, largtys)
+        fty = lc.Type.function(lretty, largtys)
         func = module.add_function(fty, name)
         return func
 
     def _implement(self, func):
         impl = self.funcdef.implementation
         bb_entry = func.append_basic_block('entry')
-        builder = Builder.new(bb_entry)
+        builder = lc.Builder.new(bb_entry)
 
         # prepare constant
         for const in impl.constants:
@@ -241,17 +241,17 @@ class LLVMBackend(object):
         self.__intrimpl = {}
 
         # pass manager builder
-        self.__pmb = PassManagerBuilder.new()
+        self.__pmb = lp.PassManagerBuilder.new()
         self.__pmb.opt_level = self.__opt
         self.__pmb.use_inliner_with_threshold(INLINER_THRESHOLD)
 
         # module-level pass manager
-        self.__pm = PassManager.new()
+        self.__pm = lp.PassManager.new()
         self.__pmb.populate(self.__pm)
 
         # intrinsic library module
-        self.__intrlib = Module.new("mlvm.intrinsic")
-        self.__intrlibfpm = FunctionPassManager.new(self.__intrlib)
+        self.__intrlib = lc.Module.new("mlvm.intrinsic.%d" % id(self))
+        self.__intrlibfpm = lp.FunctionPassManager.new(self.__intrlib)
         self.__pmb.populate(self.__intrlibfpm)
 
         # initialize default implementations
@@ -305,13 +305,13 @@ class LLVMBackend(object):
             signed = toty in _builtin_signed_int
             tyimpl = self.get_type_implementation(toty)
             toty = tyimpl.value(self)
-            assert isinstance(toty, IntegerType)
+            assert isinstance(toty, lc.IntegerType)
 
             def _icast(builder, value):
                 fromty = value.type
                 if fromty == toty:
                     return value
-                elif isinstance(fromty, IntegerType):
+                elif isinstance(fromty, lc.IntegerType):
                     if fromty.width > toty.width:
                         return builder.trunc(value, toty)
                     elif signed:
@@ -331,22 +331,22 @@ class LLVMBackend(object):
         def fcast(fromty, toty):
             tyimpl = self.get_type_implementation(toty)
             toty = tyimpl.value(self)
-            assert toty == Type.float() or toty == Type.double()
+            assert toty == lc.Type.float() or toty == lc.Type.double()
             signed = fromty in _builtin_signed_int
             def _fcast(builder, value):
                 fromty = value.type
                 if fromty == toty:
                     return value
-                elif isinstance(fromty, IntegerType):
+                elif isinstance(fromty, lc.IntegerType):
                     if signed:
                         return builder.fptosi(value, toty)
                     else:
                         return builder.fptoui(value, toty)
-                elif fromty == Type.float():
-                    assert toty == Type.double()
+                elif fromty == lc.Type.float():
+                    assert toty == lc.Type.double()
                     return builder.fpext(value, toty)
-                elif fromty == Type.double():
-                    assert toty == Type.float()
+                elif fromty == lc.Type.double():
+                    assert toty == lc.Type.float()
                     return builder.fptrunc(value, toty)
                 else:
                     raise Exception("Cannot handle cast from %s to %s" \
@@ -376,43 +376,53 @@ class LLVMBackend(object):
         def cmp_int(flag):
             def _cmp_int(builder, lhs, rhs):
                 assert lhs.type == rhs.type
-                return builder.icmp(ICMP_SLT, lhs, rhs)
+                return builder.icmp(flag, lhs, rhs)
             return _cmp_int
 
         def cmp_real(flag):
             def _cmp_real(builder, lhs, rhs):
                 assert lhs.type == rhs.type
-                return builder.fcmp(FCMP_OLT, lhs, rhs)
+                return builder.fcmp(flag, lhs, rhs)
             return _cmp_real
 
-        for bits in [8, 16, 32, 64]:
-            # unsigned
-            ty = ('uint%d' % bits,)
-            self.implement_operation('cmp.lt', ty*2, cmp_uint(ICMP_ULT))
-            # signed
-            ty = ('int%d' % bits,)
-            self.implement_operation('cmp.lt', ty*2, cmp_int(ICMP_SLT))
+        op_flags = {
+            'cmp.lt'    : (lc.ICMP_ULT, lc.ICMP_SLT, lc.FCMP_OLT),
+            'cmp.gt'    : (lc.ICMP_UGT, lc.ICMP_SGT, lc.FCMP_OGT),
+            'cmp.le'    : (lc.ICMP_ULE, lc.ICMP_SLE, lc.FCMP_OLE),
+            'cmp.ge'    : (lc.ICMP_UGE, lc.ICMP_SGE, lc.FCMP_OGE),
+            'cmp.eq'    : (lc.ICMP_EQ, lc.ICMP_EQ, lc.FCMP_OEQ),
+            'cmp.ne'    : (lc.ICMP_NE, lc.ICMP_NE, lc.FCMP_ONE),
+        }
+        
+        for op, (unsigned_flag, signed_flag, float_flag) in op_flags.items():
+            for bits in [8, 16, 32, 64]:
+                # unsigned
+                ty = ('uint%d' % bits,)
+                self.implement_operation(op, ty*2, cmp_uint(unsigned_flag))
+                # signed
+                ty = ('int%d' % bits,)
+                self.implement_operation(op, ty*2, cmp_int(signed_flag))
 
-        for ty in ['float', 'double']:
-            self.implement_operation('cmp.lt', ty*2, cmp_real(FCMP_ULT))
+            for ty in ['float', 'double']:
+                self.implement_operation(op, ty*2, cmp_real(float_flag))
 
     def _default_type_implementation(self):
         def factory(cls, name, ty, cty):
             self.implement_type(cls(name, ty, cty))
 
         for bits in [8, 16, 32, 64]:
-            ty = Type.int(bits)
+            ty = lc.Type.int(bits)
             scty = getattr(ctypes, "c_int%d" % bits)
             ucty = getattr(ctypes, "c_uint%d" % bits)
             factory(IntegerImplementation, 'int%d' % bits, ty, scty)
             factory(IntegerImplementation, 'uint%d' % bits, ty, ucty)
 
-        factory(SimpleTypeImplementation, None, Type.void(), None)
-        factory(IntegerImplementation, 'pred', Type.int(1), NotImplemented)
-        factory(RealImplementation, 'float', Type.float(), c_float)
-        factory(RealImplementation, 'double', Type.double(), c_double)
+        factory(SimpleTypeImplementation, None, lc.Type.void(), None)
+        factory(IntegerImplementation, 'pred', lc.Type.int(1), NotImplemented)
+        factory(RealImplementation, 'float', lc.Type.float(), c_float)
+        factory(RealImplementation, 'double', lc.Type.double(), c_double)
         factory(IntegerImplementation, 'address',
-                Type.int(self.address_width * 8), c_size_t)
+                lc.Type.int(self.address_width * 8), c_size_t)
 
     def implement_intrinsic(self, name, retty, argtys, impl):
         key = (name, tuple(argtys))
@@ -423,13 +433,13 @@ class LLVMBackend(object):
         name = 'mlvm.intrinsic.%s.%s' % (name, '.'.join(argtys))
         lretty = self._to_llvm_type(retty, 'return_type')
         largtys = [self._to_llvm_type(x, 'argument') for x in argtys]
-        fnty = Type.function(lretty, largtys)
+        fnty = lc.Type.function(lretty, largtys)
         lfunc = self.__intrlib.add_function(fnty, name)
 
         # set function linkage, attributes & visibility
-        lfunc.linkage = LINKAGE_LINKONCE_ODR
-        lfunc.add_attribute(ATTR_ALWAYS_INLINE)
-        lfunc.visibility = VISIBILITY_HIDDEN
+        lfunc.linkage = lc.LINKAGE_LINKONCE_ODR
+        lfunc.add_attribute(lc.ATTR_ALWAYS_INLINE)
+        lfunc.visibility = lc.VISIBILITY_HIDDEN
 
         # implement
         impl(lfunc)
@@ -485,7 +495,7 @@ class LLVMBackend(object):
                        for x in argtys]
             lretty = self._to_llvm_type(op.callee.return_type,
                                         'return_type')
-            fnty = Type.function(lretty, largtys)
+            fnty = lc.Type.function(lretty, largtys)
             decl = module.get_or_insert_function(fnty, fname)
             callintr = builder.call(decl, args)
             return callintr
@@ -502,9 +512,12 @@ class LLVMBackend(object):
         llfunc.verify()
 
         # function-level optimize
-        fpm = FunctionPassManager.new(module)
+        fpm = lp.FunctionPassManager.new(module)
         self.__pmb.populate(fpm)
+        return llfunc
 
+    def link(self, llfunc):
+        module = llfunc.module
         # link intrinsics
         module.link_in(self.__intrlib.clone())
 
@@ -523,8 +536,8 @@ def _builder_module(builder):
 
 def _detect_native_address_width():
     global ADDRESS_WIDTH
-    dummy = Module.new('dummy')
-    td = EngineBuilder.new(dummy).select_target().target_data
+    dummy = lc.Module.new('dummy')
+    td = le.EngineBuilder.new(dummy).select_target().target_data
     ADDRESS_WIDTH = td.pointer_size
 
 _detect_native_address_width()
