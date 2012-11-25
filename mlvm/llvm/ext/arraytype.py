@@ -1,5 +1,8 @@
 #
-# Array type extension for C-contigous arrays.
+# Array type extension for C arrays.
+# It does not do bound-check.
+#
+# For JIT'ed function, it accepts any object that provides a buffer-interface.
 #
 # Use this module as an extension for context and backend.
 #
