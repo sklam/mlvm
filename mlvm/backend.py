@@ -1,3 +1,6 @@
+import ctypes
+from ctypes import c_float, c_double, c_size_t
+
 from llvm.core import *
 from llvm.passes import *
 from llvm.ee import *
@@ -20,23 +23,32 @@ class TypeImplementation(object):
     def name(self):
         return self.__name
 
+    def value(self, backend):
+        raise NotImplementedError
+
     def return_type(self, backend):
         raise NotImplementedError
 
     def argument(self, backend):
         raise NotImplementedError
-
-    def value(self, backend):
+    
+    def ctype(self, backend):
         raise NotImplementedError
 
-    def constant(self, backend, value):
+    def ctype_prolog(self, backend, builder, value):
+        return value
+
+    def ctype_epilog(self, backend, builder, value):
+        pass
+    
+    def constant(self, builder, value):
         raise NotImplementedError
 
     def allocate(self, backend, builder):
         raise NotImplementedError
 
     def deallocate(self, backend, builder, value):
-        raise NotImplementedError
+        pass
 
     def use(self, backend, builder, value):
         raise NotImplementedError
@@ -53,67 +65,22 @@ class TypeImplementation(object):
     def prolog(self, backend, builder, value, attrs):
         return value
 
-    def epilog(self, backend, builder, value, attrs):
-        return value
-
-class Value(object):
-    def __init__(self, backend, tyimpl, value):
-        self.__backend = backend
-        self.__value = value
-        self.__tyimpl = tyimpl
-
-    @property
-    def _value(self):
-        return self.__value
-
-    def use(self, builder):
-        return self.__tyimpl.use(self.__backend, builder, self.__value)
-
-    def assign(self, builder, value):
-        self.__tyimpl.assign(self.__backend, builder, value, self.__value)
-
-    def precall(self, builder, value):
-        return self.__tyimpl.precall(self.__backend, builder, value)
-
-    def postcall(self, builder, value):
-        return self.__tyimpl.postcall(self.__backend, builder, value)
-
-    def prolog(self, builder, value, attrs):
-        return self.__tyimpl.prolog(self.__backend, builder, value, attrs)
-
-    def epilog(self, builder, value, attrs):
-        return self.__tyimpl.epilog(self.__backend, builder, value, attrs)
-
-
-class TempValue(Value):
-    def use(self, builder):
-        return self._value
-
-    assign = NotImplemented
-    prolog = NotImplemented
-    epilog = NotImplemented
-
-
-class ConstValue(TempValue):
-    pass
-
+    def epilog(self, backend, builder, arg, value, attrs):
+        pass
 
 class SimpleTypeImplementation(TypeImplementation):
-    def __init__(self, name, ty):
+    def __init__(self, name, ty, cty):
         super(SimpleTypeImplementation, self).__init__(name)
         self.__type = ty
+        self.__ctype = cty
 
     @property
     def _type(self):
         return self.__type
 
-    def use(self, backend, builder, value):
-        module = _builder_module(builder)
-#        namedmeta = module.get_named_metadata()
-#        print namedmeta
-        instr = builder.load(value)
-        return instr
-    
+    def ctype(self, backend):
+        return self.__ctype
+
     def value(self, backend):
         return self._type
 
@@ -123,6 +90,11 @@ class SimpleTypeImplementation(TypeImplementation):
     def argument(self, backend):
         return self._type
 
+    def use(self, backend, builder, value):
+        module = _builder_module(builder)
+        instr = builder.load(value)
+        return instr
+
     def allocate(self, backend, builder):
         return builder.alloca(self._type)
 
@@ -130,16 +102,237 @@ class SimpleTypeImplementation(TypeImplementation):
         pass
 
     def assign(self, backend, builder, value, storage):
-        assert storage.type == Type.pointer(value.type)
+        assert storage.type.pointee == value.type, (storage.type, value.type)
         builder.store(value, storage)
 
 class IntegerImplementation(SimpleTypeImplementation):
-    def constant(self, backend, value):
+    def constant(self, builder, value):
         return Constant.int(self._type, value)
 
 class RealImplementation(SimpleTypeImplementation):
-    def constant(self, backend, value):
+    def constant(self, builder, value):
         return Constant.real(self._type, value)
+
+class Value(object):
+    def __init__(self, backend, tyimpl, value):
+        self.__backend = backend
+        self.__value = value
+        self.__tyimpl = tyimpl
+
+    @property
+    def type(self):
+        return self.__tyimpl
+
+    @property
+    def backend(self):
+        return self.__backend
+
+    @property
+    def value(self):
+        return self.__value
+
+    def use(self, builder):
+        return self.value
+
+class Variable(Value):
+    def __init__(self, backend, tyimpl, builder):
+        value = tyimpl.allocate(backend, builder)
+        super(Variable, self).__init__(backend, tyimpl, value)
+
+    def assign(self, builder, value):
+        return self.type.assign(self.backend, builder, value, self.value)
+
+    def use(self, builder):
+        return self.type.use(self.backend, builder, self.value)
+
+    def deallocate(self, builder):
+        self.type.deallocate(self.backend, builder, self.value)
+
+class Argument(Variable):
+    def __init__(self, backend, tyimpl, builder, arg, attrs):
+        super(Argument, self).__init__(backend, tyimpl, builder)
+        self.__arg = arg
+        self.__attrs = attrs
+        value = self.type.prolog(self.backend, builder, arg, attrs)
+        self.assign(builder, value)
+
+    @property
+    def arg(self):
+        return self.__arg
+
+    @property
+    def attributes(self):
+        return self.__attrs
+
+    def epilog(self, builder):
+        self.type.epilog(self.backend, builder, self.value,
+                         self.arg, self.attributes)
+
+class ConstValue(Value):
+    def __init__(self, backend, tyimpl, const):
+        super(ConstValue, self).__init__(backend, tyimpl,
+                                   tyimpl.constant(backend, const))
+
+class Translator(object):
+    def __init__(self, backend, funcdef):
+        self.__backend = backend
+        self.__funcdef = funcdef
+        self.__valuemap = {}
+        self.__bbmap = {}
+
+    @property
+    def backend(self):
+        return self.__backend
+
+    @property
+    def funcdef(self):
+        return self.__funcdef
+
+    @property
+    def valuemap(self):
+        return self.__valuemap
+
+    @property
+    def bbmap(self):
+        return self.__bbmap
+    
+    def _mangle_symbol(self, name):
+        def _repl(c):
+            return '_%X_' % ord(c)
+
+        def _proc(name):
+            for c in name:
+                if not c.isalpha() and not c.isdigit():
+                    yield _repl(c)
+                else:
+                    yield c
+        return ''.join(_proc(name))
+    
+    def translate(self):
+        module = self._build_module()
+        func = self._build_function(module)
+        self._implement(func)
+        return func
+
+    def _to_llvm_type(self, ty, context):
+        return getattr(self._get_ty_impl(ty), context)(self.backend)
+
+    def _get_ty_impl(self, ty):
+        return self.backend.get_type_implementation(ty)
+
+    def _build_module(self):
+        name = "%s.%s" % (self.funcdef.name, '.'.join(map(str, self.funcdef.args)))
+        return Module.new("mod_%s" % name)
+
+    def _build_function(self, module):
+        name = self._mangle_symbol(self.funcdef.name)
+        lretty = self._to_llvm_type(self.funcdef.return_type, 'return_type')
+        largtys = [self._to_llvm_type(x, 'argument')
+                   for x in self.funcdef.args]
+        fty = Type.function(lretty, largtys)
+        func = module.add_function(fty, name)
+        return func
+
+    def _implement(self, func):
+        impl = self.funcdef.implementation
+        bb_entry = func.append_basic_block('entry')
+        builder = Builder.new(bb_entry)
+
+        # prepare constant
+        for const in impl.constants:
+            tyimpl = self._get_ty_impl(const.type)
+            self.valuemap[const] = ConstValue(self.backend, tyimpl,
+                                              const.constant)
+        
+        # alloc all varables
+        for var in impl.variables:
+            tyimpl = self._get_ty_impl(var.type)
+            valobj = self.valuemap[var] = Variable(self, tyimpl, builder)
+            if var.initializer:
+                valobj.assign(builder,
+                              self.valuemap[var.initializer].use(builder))
+        # build prolog for arguments]
+        for larg, arg in zip(func.args, impl.args):
+            tyimpl = self._get_ty_impl(arg.type)
+            self.valuemap[arg] = Argument(self.backend, tyimpl, builder, larg,
+                                          arg.attributes)
+
+
+        for i, irbb in enumerate(impl.basic_blocks):
+            # allocate basicblocks
+            bb = func.append_basic_block("block_%d" % i)
+            self.bbmap[irbb] = bb
+
+        # branch to first block
+        builder.branch(self.bbmap[impl.basic_blocks[0]])
+
+        self._build_body(impl, builder)
+    
+
+    def _build_body(self, impl, builder):
+        for i, irbb in enumerate(impl.basic_blocks):
+            # populate basicblocks
+            bb = self.bbmap[irbb]
+            builder.position_at_end(bb)
+
+            for op in irbb.operations:
+                # build operations
+                if op.name == 'assign':
+                    storage = self.valuemap[op.operands[1]]
+                    storage.assign(builder,
+                                   self.valuemap[op.operands[0]].use(builder))
+                elif op.name == 'return':
+                    retval = self.valuemap[op.operands[0]].use(builder)
+                    builder.ret(retval)
+                else:
+                    opimpl = self.backend.get_operation_implementation(op)
+                    operands = [self.valuemap[x].use(builder)
+                                for x in op.operands]
+                    tmp = opimpl(builder, *operands)
+                    if op.type:
+                        tyimpl = self._get_ty_impl(op.type)
+                        assert tyimpl.value(self) == tmp.type
+                        self.valuemap[op] = Value(self.backend, tyimpl, tmp)
+
+            if irbb.terminator: # close basicblock
+                term = irbb.terminator
+                if isinstance(term, ConditionBranch):
+                    cond = self.valuemap[term.condition].use(builder)
+                    truebr = self.bbmap[term.true_branch]
+                    falsebr = self.bbmap[term.false_branch]
+                    builder.cbranch(cond, truebr, falsebr)
+                elif isinstance(term, Branch):
+                    builder.branch(self.bbmap[term.destination])
+                else:
+                    assert isinstance(term, Return)
+                    if term.value is None:
+                        assert impl.return_type == None
+                    else:
+                        retval = self.valuemap[term.value].use(builder)
+                        self._teardown(builder)
+                        builder.ret(retval)
+
+            else: # default pass through
+                if impl.return_type:
+                    assert i + 1 < len(impl.basic_blocks), \
+                        "Missing return statement in the last block of %s" \
+                            % funcdef
+                    builder.branch(bbmap[impl.basic_blocks[i + 1]])
+                else:
+                    self._teardown(builder)
+                    builder.ret_void()
+
+    def _teardown(self, builder):
+        epilog = [i for i in self.valuemap.values()
+                  if isinstance(i, Argument)]
+
+        for val in epilog:
+            val.epilog(builder)
+
+        raii = [i for i in self.valuemap.values()
+                if isinstance(i, Variable)]
+        for val in raii:
+            val.deallocate(builder)
 
 class LLVMBackend(object):
     OPT_NONE = 0
@@ -315,20 +508,22 @@ class LLVMBackend(object):
             self.implement_operation('cmp.lt', ty*2, cmp_real(FCMP_ULT))
 
     def _default_type_implementation(self):
-        def factory(cls, name, ty):
-            self.implement_type(cls(name, ty))
+        def factory(cls, name, ty, cty):
+            self.implement_type(cls(name, ty, cty))
 
         for bits in [8, 16, 32, 64]:
             ty = Type.int(bits)
-            factory(IntegerImplementation, 'int%d' % bits, ty)
-            factory(IntegerImplementation, 'uint%d' % bits, ty)
+            scty = getattr(ctypes, "c_int%d" % bits)
+            ucty = getattr(ctypes, "c_uint%d" % bits)
+            factory(IntegerImplementation, 'int%d' % bits, ty, scty)
+            factory(IntegerImplementation, 'uint%d' % bits, ty, ucty)
 
-        factory(SimpleTypeImplementation, None, Type.void())
-        factory(IntegerImplementation, 'pred', Type.int(1))
-        factory(RealImplementation, 'float', Type.float())
-        factory(RealImplementation, 'double', Type.double())
+        factory(SimpleTypeImplementation, None, Type.void(), None)
+        factory(IntegerImplementation, 'pred', Type.int(1), NotImplemented)
+        factory(RealImplementation, 'float', Type.float(), c_float)
+        factory(RealImplementation, 'double', Type.double(), c_double)
         factory(IntegerImplementation, 'address',
-                Type.int(self.address_width * 8))
+                Type.int(self.address_width * 8), c_size_t)
 
     def implement_intrinsic(self, name, retty, argtys, impl):
         key = (name, tuple(argtys))
@@ -412,7 +607,7 @@ class LLVMBackend(object):
         return self.__opt
 
     def compile(self, funcdef):
-        llfunc = self._translate(funcdef)
+        llfunc = Translator(self, funcdef).translate()
         module = llfunc.module
 
         llfunc.verify()
@@ -426,137 +621,12 @@ class LLVMBackend(object):
 
         # module-level optimization
         self.__pm.run(module)
-        print module
-        raise
-        return LLVMFunctionUnit(llfunc)
+        return llfunc
 
-    def _translate(self, funcdef):
-        # build module
-        name = "%s.%s" % (funcdef.name, '.'.join(map(str, funcdef.args)))
-        module = Module.new("mod_%s" % name)
-        # build function
-        fname = self._mangle_symbol(name)
-        lretty = self._to_llvm_type(funcdef.return_type, 'return_type')
-        largtys = [self._to_llvm_type(x, 'argument')
-                   for x in funcdef.args]
-        fty = Type.function(lretty, largtys)
-        func = module.add_function(fty, name)
-        # implement function
-        impl = funcdef.implementation
-        bb_entry = func.append_basic_block('entry')
-        builder = Builder.new(bb_entry)
-        valuemap = {}
-        raii = set()
-
-        for var in impl.variables:
-            # alloc all varables
-            tyimpl = self.get_type_implementation(var.type)
-            value = tyimpl.allocate(self, builder)
-            vobj = Value(self, tyimpl, value)
-            valuemap[var] = vobj
-            raii.add(vobj)
-
-        for larg, arg in zip(func.args, impl.args):
-            # build prolog for arguments
-            tyimpl = self.get_type_implementation(arg.type)
-            value = tyimpl.allocate(self, builder)
-            argvar = Value(self, tyimpl, value)
-            val = tyimpl.prolog(self, builder, larg, arg.attributes)
-            argvar.assign(builder, val)
-            valuemap[arg] = argvar
-            raii.add(argvar)
-
-        for const in impl.constants:
-            # prepare constant
-            tyimpl = self.get_type_implementation(const.type)
-            valuemap[const] = ConstValue(self, tyimpl,
-                                         tyimpl.constant(self,
-                                                         const.constant))
-
-        for var in impl.variables:
-            # initialize constants
-            init = var.initializer
-            if init:
-                value = valuemap[var]
-                value.assign(builder, valuemap[init].use(builder))
-
-        bbmap = {}
-        for i, irbb in enumerate(impl.basic_blocks):
-            # allocate basicblocks
-            bb = func.append_basic_block("block_%d" % i)
-            bbmap[irbb] = bb
-
-        # branch to first block
-        builder.branch(bbmap[impl.basic_blocks[0]])
-
-        for i, irbb in enumerate(impl.basic_blocks):
-            # populate basicblocks
-            bb = bbmap[irbb]
-            builder.position_at_end(bb)
-
-            for op in irbb.operations:
-                # build operations
-                if op.name == 'assign':
-                    storage = valuemap[op.operands[1]]
-                    storage.assign(builder,
-                                   valuemap[op.operands[0]].use(builder))
-                elif op.name == 'return':
-                    retval = valuemap[op.operands[0]].use(builder)
-                    builder.ret(retval)
-                else:
-                    opimpl = self.get_operation_implementation(op)
-                    operands = [valuemap[x].use(builder)
-                                for x in op.operands]
-                    tmp = opimpl(builder, *operands)
-                    if op.type:
-                        tyimpl = self.get_type_implementation(op.type)
-                        assert tyimpl.value(self) == tmp.type
-                        valuemap[op] = TempValue(builder, tyimpl, tmp)
-
-            if irbb.terminator: # close basicblock
-                term = irbb.terminator
-                if isinstance(term, ConditionBranch):
-                    cond = valuemap[term.condition].use(builder)
-                    truebr = bbmap[term.true_branch]
-                    falsebr = bbmap[term.false_branch]
-                    builder.cbranch(cond, truebr, falsebr)
-                elif isinstance(term, Branch):
-                    builder.branch(bbmap[term.destination])
-                else:
-                    assert isinstance(term, Return)
-                    if term.value is None:
-                        assert impl.return_type == None
-                    else:
-                        builder.ret(valuemap[term.value].use(builder))
-
-            else: # default pass through
-                if impl.return_type:
-                    assert i + 1 < len(impl.basic_blocks), \
-                        "Missing return statement in the last block of %s" \
-                            % funcdef
-                    builder.branch(bbmap[impl.basic_blocks[i + 1]])
-                else:
-                    builder.ret_void()
-
-        return func
-    
     def _to_llvm_type(self, ty, context):
         tyimpl = self.get_type_implementation(ty)
         impl = getattr(tyimpl, context)
         return impl(self)
-
-    def _mangle_symbol(self, name):
-        def _repl(c):
-            return '_%X_' % ord(c)
-
-        def _proc(name):
-            for c in name:
-                if not c.isalpha() and not c.isdigit():
-                    yield _repl(c)
-                else:
-                    yield c
-
-        return ''.join(_proc(name))
 
 def _builder_module(builder):
     module = builder.basic_block.function.module

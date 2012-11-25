@@ -2,6 +2,8 @@ from mlvm.ir import *
 from mlvm.execute import *
 from mlvm.backend import LLVMBackend, TypeImplementation
 import llvm
+import numpy as np
+from ctypes import *
 
 def main():
     context = configure()
@@ -23,6 +25,26 @@ class ArrayType(TypeImplementation):
     def element(self):
         return self.__elemtype
 
+    def ctype(self, backend):
+        from ctypes import POINTER
+        typeimpl = backend.get_type_implementation(self.element)
+        c_elem_t = typeimpl.ctype(backend)
+        return POINTER(c_elem_t)
+
+#    def ctype(self, backend):
+#        from ctypes import py_object
+#        return py_object
+#
+#    def ctype_prolog(self, backend, builder, value):
+#        from ctypes import
+#        module.get_or_insert_function()
+#        builder.call()
+#
+#    def ctype_epilog(self, backend, builder, args, value)
+#
+#    def ctype_return(self, backend, builder, value):
+
+
     def use(self, backend, builder, value):
         return builder.load(value)
 
@@ -37,10 +59,8 @@ class ArrayType(TypeImplementation):
     def allocate(self, backend, builder):
         return builder.alloca(self.value(backend))
 
-    def deallocate(self, backend, builder):
-        pass
-
     def assign(self, backend, builder, value, storage):
+        assert storage.type.pointee == value.type
         builder.store(value, storage)
 
     def prolog(self, backend, builder, value, attrs):
@@ -101,9 +121,10 @@ def frontend(context):
     sum = body.add(lval, rval)
     prod = body.mul(sum, pi)
 
+    body.array_store(C, prod, idx)
+
     idx_next = body.add(idx, one)
     body.assign(idx_next, idx)
-    body.array_store(C, prod, idx)
 
     body.branch(cond.basic_block)
 
@@ -115,17 +136,35 @@ def frontend(context):
 
 def backend(context, funcdef):
     print funcdef
-    manager = LLVMExecutionManager(LLVMBackend(opt=LLVMBackend.OPT_MAXIMUM))
-    manager.backend.implement_type(ArrayType('array_double', 'double'))
-    manager.backend.implement_intrinsic('array_load', 'double',
-                                        ('array_double', 'address'),
-                                        array_load_impl)
-    manager.backend.implement_intrinsic('array_store', None,
-                                        ('array_double', 'double', 'address'),
-                                        array_store_impl)
-    jit = JIT(manager, context)
+    backend = LLVMBackend(opt=LLVMBackend.OPT_MAXIMUM)
+    manager = LLVMExecutionManager(opt=LLVMExecutionManager.OPT_MAXIMUM)
+    backend.implement_type(ArrayType('array_double', 'double'))
+    backend.implement_intrinsic('array_load',
+                                'double',
+                                ('array_double', 'address'),
+                                array_load_impl)
+    backend.implement_intrinsic('array_store',
+                                None,
+                                ('array_double', 'double', 'address'),
+                                array_store_impl)
+    jit = JIT(manager, {'': backend})
     function = jit.compile(funcdef)
-    print function
+
+    A = np.arange(10, dtype=np.float64)
+    B = A * 2
+    C = np.empty_like(A)
+
+    c_double_p = POINTER(c_double)
+
+    n = function(A.ctypes.data_as(c_double_p), B.ctypes.data_as(c_double_p),
+                 C.ctypes.data_as(c_double_p), A.shape[0])
+    assert n == A.shape[0]
+
+    Gold = (A + B) * 3.14
+    assert np.allclose(Gold, C)
+
+    f2 = jit.compile(funcdef)
+    assert function == f2
 
 def array_load_impl(lfunc):
     from llvm.core import Builder
