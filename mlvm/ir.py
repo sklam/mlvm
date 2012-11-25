@@ -45,6 +45,14 @@ class Builder(object):
     def basic_block(self):
         return self.__basicblock
 
+    def set_basic_block(self, bb):
+        '''Set insert position to the end of the new basic-block.
+        '''
+        self.__basicblock = bb
+
+    def append_basic_block(self):
+        return self.basic_block.implementation.append_basic_block()
+
     def const(self, type, val, name=''):
         const = Constant(type, val, name)
         self.basic_block.implementation.constants.append(const)

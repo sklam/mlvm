@@ -206,7 +206,7 @@ class LLVMTranslator(object):
                     assert i + 1 < len(impl.basic_blocks), \
                         "Missing return statement in the last block of %s" \
                             % funcdef
-                    builder.branch(bbmap[impl.basic_blocks[i + 1]])
+                    builder.branch(self.bbmap[impl.basic_blocks[i + 1]])
                 else:
                     self.__teardown(builder)
                     builder.ret_void()

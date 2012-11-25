@@ -423,10 +423,13 @@ class FunctionImplementation(object):
                 term_template = "{:>12s} {:s}"
                 buf.append(term_template.format('br',
                                                 idx_of_bb(term.destination)))
-            else:
+            elif isinstance(term, Return):
                 term_template = "{:>12s} {:s}"
-                buf.append(term_template.format('return',
-                                                namemap[id(term.value)]))
+                if term.value:
+                    retval = namemap[id(term.value)]
+                else:
+                    retval = ''
+                buf.append(term_template.format('return', retval))
 
 
 
