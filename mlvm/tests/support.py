@@ -63,7 +63,7 @@ def sample_array_function_2(context, arraytype):
 
     funcdef = function.add_definition(retty, argtys)
 
-    logger.debug("mlvm def\n%s" % funcdef)
+    logger.debug("mlvm def\n%s", funcdef)
 
     impl = funcdef.implement(FunctionImplementation)
 

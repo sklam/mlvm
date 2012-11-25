@@ -36,6 +36,8 @@ class TestArrayExtension(unittest.TestCase):
         jit = JIT(manager, {'': backend})
         function = jit.compile(funcdef)
 
+        logger.debug("jit'ed funciton\n%s", function)
+
         # ensure a function is not duplicated
         f2 = jit.compile(funcdef)
         assert function == f2
