@@ -2,7 +2,7 @@ from mlvm.ir import *
 from mlvm.jit import *
 from mlvm.llvm.jit import *
 from mlvm.llvm.backend import *
-import mlvm.ext.arraytype
+from mlvm.llvm.ext import arraytype as ext_arraytype
 import llvm
 import numpy as np
 from ctypes import *
@@ -14,7 +14,7 @@ def main():
 
 def configure():
     context = Context(TypeSystem())
-    context.install(mlvm.ext.arraytype)
+    context.install(ext_arraytype)
     return context
 
 def frontend(context):
@@ -80,7 +80,7 @@ def frontend(context):
 def backend(context, funcdef):
     print funcdef
     backend = LLVMBackend(opt=LLVMBackend.OPT_MAXIMUM)
-    backend.install(mlvm.ext.arraytype)
+    backend.install(ext_arraytype)
     
     manager = LLVMExecutionManager(opt=LLVMExecutionManager.OPT_MAXIMUM)
     

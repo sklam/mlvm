@@ -83,7 +83,7 @@ class LLVMTranslator(object):
     def bbmap(self):
         return self.__bbmap
 
-    def _mangle_symbol(self, name):
+    def __mangle_symbol(self, name):
         def _repl(c):
             return '_%X_' % ord(c)
 
@@ -96,53 +96,53 @@ class LLVMTranslator(object):
         return ''.join(_proc(name))
 
     def translate(self):
-        module = self._build_module()
-        func = self._build_function(module)
-        self._implement(func)
+        module = self.__build_module()
+        func = self.__build_function(module)
+        self.__implement(func)
         return func
 
-    def _to_llvm_type(self, ty, context):
-        return getattr(self._get_ty_impl(ty), context)(self.backend)
+    def __to_llvm_type(self, ty, context):
+        return getattr(self.__get_ty_impl(ty), context)(self.backend)
 
-    def _get_ty_impl(self, ty):
+    def __get_ty_impl(self, ty):
         return self.backend.get_type_implementation(ty)
 
-    def _build_module(self):
+    def __build_module(self):
         name = "%s.%s" % (self.funcdef.name,
                           '.'.join(map(str, self.funcdef.args)))
         return lc.Module.new("mod_%s" % name)
 
-    def _build_function(self, module):
+    def __build_function(self, module):
         rawname = '%s.%s' % (self.funcdef.name, '.'.join(self.funcdef.args))
-        name = self._mangle_symbol(rawname)
-        lretty = self._to_llvm_type(self.funcdef.return_type, 'return_type')
-        largtys = [self._to_llvm_type(x, 'argument')
+        name = self.__mangle_symbol(rawname)
+        lretty = self.__to_llvm_type(self.funcdef.return_type, 'return_type')
+        largtys = [self.__to_llvm_type(x, 'argument')
                    for x in self.funcdef.args]
         fty = lc.Type.function(lretty, largtys)
         func = module.add_function(fty, name)
         return func
 
-    def _implement(self, func):
+    def __implement(self, func):
         impl = self.funcdef.implementation
         bb_entry = func.append_basic_block('entry')
         builder = lc.Builder.new(bb_entry)
 
         # prepare constant
         for const in impl.constants:
-            tyimpl = self._get_ty_impl(const.type)
+            tyimpl = self.__get_ty_impl(const.type)
             self.valuemap[const] = ConstValue(self.backend, tyimpl,
                                               const.constant)
 
         # alloc all varables
         for var in impl.variables:
-            tyimpl = self._get_ty_impl(var.type)
+            tyimpl = self.__get_ty_impl(var.type)
             valobj = self.valuemap[var] = Variable(self, tyimpl, builder)
             if var.initializer:
                 valobj.assign(builder,
                               self.valuemap[var.initializer].use(builder))
         # build prolog for arguments]
         for larg, arg in zip(func.args, impl.args):
-            tyimpl = self._get_ty_impl(arg.type)
+            tyimpl = self.__get_ty_impl(arg.type)
             self.valuemap[arg] = Argument(self.backend, tyimpl, builder, larg,
                                           arg.attributes)
 
@@ -155,10 +155,10 @@ class LLVMTranslator(object):
         # branch to first block
         builder.branch(self.bbmap[impl.basic_blocks[0]])
 
-        self._build_body(impl, builder)
+        self.__build_body(impl, builder)
 
 
-    def _build_body(self, impl, builder):
+    def __build_body(self, impl, builder):
         for i, irbb in enumerate(impl.basic_blocks):
             # populate basicblocks
             bb = self.bbmap[irbb]
@@ -179,7 +179,7 @@ class LLVMTranslator(object):
                                 for x in op.operands]
                     tmp = opimpl(builder, *operands)
                     if op.type:
-                        tyimpl = self._get_ty_impl(op.type)
+                        tyimpl = self.__get_ty_impl(op.type)
                         assert tyimpl.value(self) == tmp.type
                         self.valuemap[op] = Value(self.backend, tyimpl, tmp)
 
@@ -198,7 +198,7 @@ class LLVMTranslator(object):
                         assert impl.return_type == None
                     else:
                         retval = self.valuemap[term.value].use(builder)
-                        self._teardown(builder)
+                        self.__teardown(builder)
                         builder.ret(retval)
 
             else: # default pass through
@@ -208,10 +208,10 @@ class LLVMTranslator(object):
                             % funcdef
                     builder.branch(bbmap[impl.basic_blocks[i + 1]])
                 else:
-                    self._teardown(builder)
+                    self.__teardown(builder)
                     builder.ret_void()
 
-    def _teardown(self, builder):
+    def __teardown(self, builder):
         epilog = [i for i in self.valuemap.values()
                   if isinstance(i, Argument)]
 
@@ -223,7 +223,7 @@ class LLVMTranslator(object):
         for val in raii:
             val.deallocate(builder)
 
-class LLVMBackend(object):
+class LLVMBackend(Backend):
     OPT_NONE = 0
     OPT_LESS = 1
     OPT_NORMAL = 2
@@ -231,15 +231,13 @@ class LLVMBackend(object):
     OPT_MAXIMUM = OPT_AGGRESSIVE
 
     def __init__(self, address_width=None, opt=OPT_NORMAL):
+        super(LLVMBackend, self).__init__()
         if not address_width: # auto-detect
             address_width = ADDRESS_WIDTH
         assert address_width in [4, 8]
         self.__address_width = address_width
         self.__opt = opt
-        self.__typeimpl = {}
-        self.__opimpl = {}
-        self.__intrimpl = {}
-
+                
         # pass manager builder
         self.__pmb = lp.PassManagerBuilder.new()
         self.__pmb.opt_level = self.__opt
@@ -265,6 +263,31 @@ class LLVMBackend(object):
     @property
     def address_width(self):
         return self.__address_width
+
+
+    @property
+    def opt(self):
+        return self.__opt
+
+    def compile(self, funcdef):
+        llfunc = LLVMTranslator(self, funcdef).translate()
+        module = llfunc.module
+
+        llfunc.verify()
+
+        # function-level optimize
+        fpm = lp.FunctionPassManager.new(module)
+        self.__pmb.populate(fpm)
+        return llfunc
+
+    def link(self, llfunc):
+        module = llfunc.module
+        # link intrinsics
+        module.link_in(self.__intrlib.clone())
+
+        # module-level optimization
+        self.__pm.run(module)
+        return llfunc
 
     def _default_operation_implementation(self):
         self._default_comparision_implementation()
@@ -428,65 +451,6 @@ class LLVMBackend(object):
         factory(IntegerImplementation, 'address',
                 lc.Type.int(self.address_width * 8), c_size_t)
 
-    def implement_intrinsic(self, name, retty, argtys, impl):
-        key = (name, tuple(argtys))
-        assert key not in self.__intrimpl
-        self.__intrimpl[key] = impl
-
-        # make function
-        name = 'mlvm.intrinsic.%s.%s' % (name, '.'.join(argtys))
-        lretty = self._to_llvm_type(retty, 'return_type')
-        largtys = [self._to_llvm_type(x, 'argument') for x in argtys]
-        fnty = lc.Type.function(lretty, largtys)
-        lfunc = self.__intrlib.add_function(fnty, name)
-
-        # set function linkage, attributes & visibility
-        lfunc.linkage = lc.LINKAGE_LINKONCE_ODR
-        lfunc.add_attribute(lc.ATTR_ALWAYS_INLINE)
-        lfunc.visibility = lc.VISIBILITY_HIDDEN
-
-        # implement
-        impl(lfunc)
-        lfunc.verify()
-        # optimize
-        self.__intrlibfpm.run(lfunc)
-
-    def list_intrinsic_implementations(self):
-        return self.__intrimpl.items()
-
-    def get_intrinsic_implementation(self, name, argtys):
-        return self.__intrimpl[(name, tuple(argtys))]
-
-    def implement_type(self, impl):
-        self.__typeimpl[impl.name] = impl
-
-    def list_implemented_types(self):
-        return self.__typeimpl.items()
-
-    def is_type_implemented(self, ty):
-        return ty in self.__typeimpl
-
-    def get_type_implementation(self, ty):
-        try:
-            return self.__typeimpl[ty]
-        except KeyError:
-            raise TypeUnimplementedError(ty)
-
-    def implement_operation(self, operator, operand_types, impl):
-        self.__opimpl[(operator, tuple(operand_types))] = impl
-
-    def list_implemented_operation(self):
-        return self.__opimpl.items()
-
-    def get_operation_implementation(self, op):
-        if op.name.startswith('call.intr'):
-            return self._build_intrinsic_call(op)
-        elif op.name.startswith('call'):
-            print op.callee
-            raise NotImplementedError
-        operator = op.name
-        operand_types = tuple(i.type for i in op.operands)
-        return self.__opimpl[(operator, operand_types)]
 
     def _build_intrinsic_call(self, op):
         argtys = op.callee.args
@@ -495,9 +459,9 @@ class LLVMBackend(object):
             assert len(args) == len(argtys)
             module = _builder_module(builder)
 
-            largtys = [self._to_llvm_type(x, 'argument')
+            largtys = [self.__to_llvm_type(x, 'argument')
                        for x in argtys]
-            lretty = self._to_llvm_type(op.callee.return_type,
+            lretty = self.__to_llvm_type(op.callee.return_type,
                                         'return_type')
             fnty = lc.Type.function(lretty, largtys)
             decl = module.get_or_insert_function(fnty, fname)
@@ -505,31 +469,30 @@ class LLVMBackend(object):
             return callintr
         return _build
 
-    @property
-    def opt(self):
-        return self.__opt
+    def _implement_intrinsic(self, name, retty, argtys, impl):
+        '''
+        Add intrinsic implementation to the intrinsic library
+        '''
 
-    def compile(self, funcdef):
-        llfunc = LLVMTranslator(self, funcdef).translate()
-        module = llfunc.module
+        # make function
+        name = 'mlvm.intrinsic.%s.%s' % (name, '.'.join(argtys))
+        lretty = self.__to_llvm_type(retty, 'return_type')
+        largtys = [self.__to_llvm_type(x, 'argument') for x in argtys]
+        fnty = lc.Type.function(lretty, largtys)
+        lfunc = self.__intrlib.add_function(fnty, name)
 
-        llfunc.verify()
+        # set function linkage, attributes & visibility
+        lfunc.linkage = lc.LINKAGE_LINKONCE_ODR
+        lfunc.add_attribute(lc.ATTR_ALWAYS_INLINE)
+        lfunc.visibility = lc.VISIBILITY_HIDDEN
+        
+        # implement
+        impl(lfunc)
+        lfunc.verify()
+        # optimize
+        self.__intrlibfpm.run(lfunc)
 
-        # function-level optimize
-        fpm = lp.FunctionPassManager.new(module)
-        self.__pmb.populate(fpm)
-        return llfunc
-
-    def link(self, llfunc):
-        module = llfunc.module
-        # link intrinsics
-        module.link_in(self.__intrlib.clone())
-
-        # module-level optimization
-        self.__pm.run(module)
-        return llfunc
-
-    def _to_llvm_type(self, ty, context):
+    def __to_llvm_type(self, ty, context):
         tyimpl = self.get_type_implementation(ty)
         impl = getattr(tyimpl, context)
         return impl(self)

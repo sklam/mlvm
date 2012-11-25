@@ -63,6 +63,9 @@ class TypeImplementation(object):
 
 
 class Value(object):
+    '''
+    Use to aid translation from MLVM IR to LLVM IR
+    '''
     def __init__(self, backend, tyimpl, value):
         self.__backend = backend
         self.__value = value
@@ -121,3 +124,79 @@ class ConstValue(Value):
     def __init__(self, backend, tyimpl, const):
         super(ConstValue, self).__init__(backend, tyimpl,
                                    tyimpl.constant(backend, const))
+
+class Backend(object):
+    def __init__(self):
+        self.__typeimpl = {}
+        self.__opimpl = {}
+        self.__intrimpl = {}
+
+    #
+    # Should override
+    #
+
+    def compile(self, funcdef):
+        raise NotImplementedError
+
+    def link(self, unit):
+        raise NotImplementedError
+
+
+    def _build_intrinsic_call(self, op):
+        raise NotImplementedError
+
+    def _implement_intrinsic(self, name, retty, argtys, impl):
+        '''
+        Called in implement_intrinsic
+        '''
+        raise NotImplementedError
+
+    #
+    # Should NOT override
+    #
+
+    def install(self, ext):
+        ext.install_to_backend(self)
+
+    def implement_intrinsic(self, name, retty, argtys, impl):
+        key = (name, tuple(argtys))
+        assert key not in self.__intrimpl
+        self.__intrimpl[key] = impl
+        self._implement_intrinsic(name, retty, argtys, impl)
+
+    def list_intrinsic_implementations(self):
+        return self.__intrimpl.items()
+
+    def get_intrinsic_implementation(self, name, argtys):
+        return self.__intrimpl[(name, tuple(argtys))]
+
+    def implement_type(self, impl):
+        self.__typeimpl[impl.name] = impl
+
+    def list_implemented_types(self):
+        return self.__typeimpl.items()
+
+    def is_type_implemented(self, ty):
+        return ty in self.__typeimpl
+
+    def get_type_implementation(self, ty):
+        try:
+            return self.__typeimpl[ty]
+        except KeyError:
+            raise TypeUnimplementedError(ty)
+
+    def implement_operation(self, operator, operand_types, impl):
+        self.__opimpl[(operator, tuple(operand_types))] = impl
+
+    def list_implemented_operation(self):
+        return self.__opimpl.items()
+
+    def get_operation_implementation(self, op):
+        if op.name.startswith('call.intr'):
+            return self._build_intrinsic_call(op)
+        elif op.name.startswith('call'):
+            print op.callee
+            raise NotImplementedError
+        operator = op.name
+        operand_types = tuple(i.type for i in op.operands)
+        return self.__opimpl[(operator, operand_types)]
