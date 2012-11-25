@@ -4,11 +4,8 @@ from .value import *
 class InvalidTypeName(Exception):
     pass
 
-class DefinitionError(Exception):
-    def __init__(self, name, argtys):
-        super(DefinitionError, self).__init__(
-                            "Definition %s (%s) has already been defined"
-                            % (name, ', '.join(argtys)))
+class AleadyDefinedError(NameError):
+    pass
 
 class MissingImplementation(Exception):
     pass
@@ -83,7 +80,7 @@ class TypeSystem(object):
 
     builtin_implicit_cast = _build_implicit_cast_table()
 
-    def __init__(self, types, implicit_casts=None):
+    def __init__(self, types=[], implicit_casts=None):
         '''
         implicit_casts --- overrides implicit cast table
         '''
@@ -153,6 +150,9 @@ class TypeSystem(object):
     def types(self):
         return list(self.__types)
 
+    def add_type(self, type):
+        return self.__types.add(type)
+
 class Context(object):
     def __init__(self, typesystem):
         self.__typesystem = typesystem
@@ -164,6 +164,8 @@ class Context(object):
         return self.__typesystem
 
     def add_intrinsic(self, name):
+        if name in self.__intrinsics:
+            raise AleadyDefinedError(name)
         intr = Intrinsic(self, name)
         self.__intrinsics[name] = intr
         return intr
@@ -185,6 +187,8 @@ class Context(object):
     def list_functions(self):
         return self.__functions.values()
 
+    def install(self, ext):
+        ext.install_to_context(self)
 
 class Callable(object):
 
@@ -203,7 +207,7 @@ class Callable(object):
         assert all(map(self.context.type_system.is_type_valid, argtys))
         key = tuple(argtys)
         if key in self.__defs:
-            raise DefinitionError(key)
+            raise AleadyDefinedError(key)
         defn = self.__defs[key] = self._definition_type_(self, retty, argtys)
         return defn
 

@@ -258,6 +258,10 @@ class LLVMBackend(object):
         self._default_type_implementation()
         self._default_operation_implementation()
 
+
+    def install(self, ext):
+        ext.install_to_backend(self)
+
     @property
     def address_width(self):
         return self.__address_width

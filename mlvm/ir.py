@@ -27,7 +27,7 @@ class InvalidCast(TypeError):
 
 class CannotCoerce(TypeError):
     def __init__(self, srcty, dstty):
-        super(InvalidCast, self).__init__(
+        super(CannotCoerce, self).__init__(
                     "Cannot coerce types: %s and %s without loss of precision"
                     % (srcty, dstty))
 
@@ -64,6 +64,7 @@ class Builder(object):
         for defn in callee.list_definitions():
             argtys = defn.args
             if calltys == argtys:
+                selected_defn = defn
                 break
             else:
                 # use the definition with the least conversion
@@ -74,6 +75,7 @@ class Builder(object):
                     elif ts.can_implicit_cast(x, y):
                         rank += 1
                     else:
+                        rank = 2**31
                         break # not convertible
                 else:
                     # is convertible
@@ -85,13 +87,12 @@ class Builder(object):
             if len(ordered) > 1 and ordered[0][0] > ordered[1][0]:
                 # first two entries have the same rank
                 raise MultiplePossibleDefinition(callee, args)
-
-            defns = possible[0][2]
+            selected_defn = possible[0][2]
 
         args = [self.cast(arg, ty)
-                for ty, arg in zip(argtys, args)]
+                for ty, arg in zip(selected_defn.args, args)]
 
-        op = Call(defn, args)
+        op = Call(selected_defn, args)
         self.basic_block.operations.append(op)
         return op
 
