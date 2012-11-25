@@ -54,7 +54,6 @@ class LLVMExecutionManager(ExecutionManagerInterface):
         return callable
 
     def build_wrapper(self, backend, funcdef, callee, gil=True):
-        print callee
         # get address of funciton; forces JIT
         address = self.__engine.get_pointer_to_function(callee)
         # get ctypes of retty and argtys
