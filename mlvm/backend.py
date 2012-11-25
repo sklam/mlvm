@@ -22,6 +22,12 @@ class TypeImplementation(object):
     def ctype(self, backend):
         raise NotImplementedError
 
+    def ctype_argument(self, backend, value):
+        return value
+
+    def ctype_return(self, backend, value):
+        return value
+
     def ctype_prolog(self, backend, builder, value):
         return value
 

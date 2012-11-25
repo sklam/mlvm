@@ -59,9 +59,12 @@ class LLVMExecutionManager(ExecutionManagerInterface):
         address = self.__engine.get_pointer_to_function(callee)
         # get ctypes of retty and argtys
         get_ty_impl = backend.get_type_implementation
-        cretty = get_ty_impl(funcdef.return_type).ctype(backend)
-        cargtys = [get_ty_impl(x).ctype(backend)
-                   for x in funcdef.args]
+
+        rettyimpl = get_ty_impl(funcdef.return_type)
+        argtyimpls = [get_ty_impl(x) for x in funcdef.args]
+        
+        cretty = rettyimpl.ctype(backend)
+        cargtys = [x.ctype(backend) for x in argtyimpls]
 
         if gil:
             ffi = PYFUNCTYPE
@@ -69,5 +72,12 @@ class LLVMExecutionManager(ExecutionManagerInterface):
             ffi = CFUNCTYPE
 
         callable = ffi(cretty, *cargtys)(address)
-        return callable
+
+        def _wrapper(*args):
+            args = [ty.ctype_argument(backend, arg)
+                    for ty, arg in zip(argtyimpls, args)]
+            retval = callable(*args)
+            return rettyimpl.ctype_return(backend, retval)
+
+        return _wrapper
 

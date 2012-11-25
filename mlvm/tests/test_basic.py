@@ -33,19 +33,20 @@ class ArrayType(TypeImplementation):
         c_elem_t = typeimpl.ctype(backend)
         return POINTER(c_elem_t)
 
-#    def ctype(self, backend):
-#        from ctypes import py_object
-#        return py_object
-#
-#    def ctype_prolog(self, backend, builder, value):
-#        from ctypes import
-#        module.get_or_insert_function()
-#        builder.call()
-#
-#    def ctype_epilog(self, backend, builder, args, value)
-#
-#    def ctype_return(self, backend, builder, value):
+    def ctype_argument(self, backend, value):
+        from ctypes import c_void_p, cast
 
+        if isinstance(value, self.ctype(backend)):
+            return value
+        else:
+            view = memoryview(value)
+            assert view.ndim == 1
+            ctelem = self.ctype(backend)
+            address = cast(c_void_p(id(view) + 3 * backend.address_width),
+                           POINTER(c_uint64))[0]
+            data = cast(c_void_p(address), ctelem)
+            return data
+        assert False
 
     def use(self, backend, builder, value):
         return builder.load(value)
@@ -152,10 +153,15 @@ def backend(context, funcdef):
     jit = JIT(manager, {'': backend})
     function = jit.compile(funcdef)
 
+    # ensure a function is not duplicated
+    f2 = jit.compile(funcdef)
+    assert function == f2
+
     A = np.arange(10, dtype=np.float64)
     B = A * 2
     C = np.empty_like(A)
 
+    # call with ctypes
     c_double_p = POINTER(c_double)
 
     n = function(A.ctypes.data_as(c_double_p), B.ctypes.data_as(c_double_p),
@@ -165,8 +171,18 @@ def backend(context, funcdef):
     Gold = (A + B) * 3.14
     assert np.allclose(Gold, C)
 
-    f2 = jit.compile(funcdef)
-    assert function == f2
+    # call with numpy array
+    C = np.zeros_like(A)
+
+    n = function(A, B, C, A.shape[0])
+    assert n == A.shape[0]
+
+    Gold = (A + B) * 3.14
+    
+    assert np.allclose(Gold, C)
+
+
+
 
 def array_load_impl(lfunc):
     from llvm.core import Builder
