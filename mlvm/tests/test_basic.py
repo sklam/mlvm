@@ -1,5 +1,5 @@
 from mlvm.ir import *
-from mlvm.execute import *
+from mlvm.jit import *
 from mlvm.backend import LLVMBackend, TypeImplementation
 import llvm
 import numpy as np
