@@ -130,6 +130,7 @@ class Backend(object):
         self.__typeimpl = {}
         self.__opimpl = {}
         self.__intrimpl = {}
+        self.__extralib = []
 
     #
     # Should override
@@ -154,6 +155,11 @@ class Backend(object):
     #
     # Should NOT override
     #
+    def list_extra_libraries(self):
+        return list(self.__extralib)
+
+    def add_extra_libraries(self, lib):
+        self.__extralib.append(lib)
 
     def install(self, ext):
         ext.install_to_backend(self)

@@ -256,7 +256,6 @@ class LLVMBackend(Backend):
         self._default_type_implementation()
         self._default_operation_implementation()
 
-
     def install(self, ext):
         ext.install_to_backend(self)
 
@@ -284,6 +283,10 @@ class LLVMBackend(Backend):
         module = llfunc.module
         # link intrinsics
         module.link_in(self.__intrlib.clone())
+
+        # link extra libraries
+        for lib in self.list_extra_libraries():
+            module.link_in(lib.clone())
 
         # module-level optimization
         self.__pm.run(module)
