@@ -71,7 +71,9 @@ class Builder(object):
         ts = self.context.type_system
         for defn in callee.list_definitions():
             argtys = defn.args
-            if calltys == argtys:
+            if len(calltys) != len(argtys):
+                continue
+            elif calltys == argtys:
                 selected_defn = defn
                 break
             else:
