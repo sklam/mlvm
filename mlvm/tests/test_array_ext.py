@@ -3,7 +3,7 @@ from mlvm.jit import *
 from mlvm.llvm.jit import *
 from mlvm.llvm.backend import *
 from mlvm.llvm.ext import arraytype as ext_arraytype
-import llvm
+
 import numpy as np
 from ctypes import *
 from .support import sample_array_function_1, sample_array_function_2
