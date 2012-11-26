@@ -40,7 +40,7 @@ class LLVMCWrapperGenerator(object):
         c_uint32 : 'uint32_t',
         c_uint64 : 'uint64_t',
 
-        c_float : 'float',
+        c_float  : 'float',
         c_double : 'double',
         }
     

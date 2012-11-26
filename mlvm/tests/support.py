@@ -18,7 +18,7 @@ def sample_array_function_1(context, arraytype):
 
     logger.debug("mlvm def\n%s" % funcdef)
 
-    impl = funcdef.implement(FunctionImplementation)
+    impl = funcdef.implement()
 
     A, B, C, stop = impl.args
     A.attributes.add('in')

@@ -240,17 +240,11 @@ class Callable(object):
             return '\n'.join(buf)
 
 class Definition(object):
+
     def __init__(self, parent, retty, argtys):
         self.__parent = weakref.proxy(parent)
         self.__retty = retty
         self.__argtys = tuple(argtys) # immutable
-        self.__impl = None
-
-    def implement(self, impl):
-        if not self.is_declaration:
-            raise ReimplementationError(self)
-        self.__impl = impl(self)
-        return self.__impl
 
     @property
     def name(self):
@@ -260,16 +254,6 @@ class Definition(object):
     def parent(self):
         return self.__parent
 
-    @property
-    def is_declaration(self):
-        return self.__impl is None
-
-    @property
-    def implementation(self):
-        if self.is_declaration:
-            raise MissingImplementation(self)
-        return self.__impl
-    
     @property
     def return_type(self):
         return self.__retty
@@ -282,37 +266,6 @@ class Definition(object):
     def kind(self):
         return self._kind_
 
-class FunctionDefinition(Definition):
-    _kind_ = 'func'
-
-    def __str__(self):
-        if not self.is_declaration:
-            return str(self.implementation)
-        else:
-            return "%s %s(%s)" % (self.return_type or 'void',
-                                  self.name,
-                                  ', '.join(self.args))
-
-class IntrinsicDefinition(Definition):
-    _kind_ = 'intr'
-
-    def __str__(self):
-        if not self.is_declaration:
-            return str(self.implementation)
-        else:
-            if self.return_type:
-                retty = '-> %s' % self.return_type
-            else:
-                retty = ''
-            return "intrinsic %s(%s) %s" % (self.name,
-                                           ', '.join(self.args),
-                                           retty)
-
-class Intrinsic(Callable):
-    _definition_type_ = IntrinsicDefinition
-
-class Function(Callable):
-    _definition_type_ = FunctionDefinition
 
 class FunctionImplementation(object):
     def __init__(self, funcdef):
@@ -365,19 +318,19 @@ class FunctionImplementation(object):
         return self.__consts
 
     def __str__(self):
-        '''Pretty print the whole implementation 
-        using a custom IR similar to LLVM IR.
-        '''
+        '''Pretty print the whole implementation
+            using a custom IR similar to LLVM IR.
+            '''
         buf = []
 
         namemap = {}
         template = "{:>20s}\t{:<20s}"
-        
+
         buf.append('define %s %s (' % (self.return_type or 'void', self.name))
         for i, arg in enumerate(self.args):
             name = namemap[id(arg)] = arg.name or ("%%arg_%d" % i)
             buf.append(template.format(arg.type, name))
-        
+
         buf.append('    )')
         buf.append('{')
 
@@ -386,7 +339,7 @@ class FunctionImplementation(object):
         for i, k in enumerate(self.constants):
             name=  namemap[id(k)] = k.name or ("%%const_%d" % i)
             buf.append(template.format(name, str(k.constant), pad, k.type))
-    
+
         for i, v in enumerate(self.variables):
             name = namemap[id(v)] = v.name or ("%%var_%d" % i)
             if v.initializer:
@@ -430,11 +383,69 @@ class FunctionImplementation(object):
                 else:
                     retval = ''
                 buf.append(term_template.format('return', retval))
-
-
-
+        
+        
+        
         buf.append('}')
         return '\n'.join(buf)
+
+
+class FunctionDefinition(Definition):
+    _kind_ = 'func'
+    default_implementator = FunctionImplementation
+
+    def __init__(self, parent, retty, argtys):
+        super(FunctionDefinition, self).__init__(parent, retty, argtys)
+        self.__impl = None
+
+    def __str__(self):
+        if not self.is_declaration:
+            return str(self.implementation)
+        else:
+            return "%s %s(%s)" % (self.return_type or 'void',
+                                  self.name,
+                                  ', '.join(self.args))
+
+    def implement(self, impl=None):
+        '''
+        impl --- [optional] Implementator class.  
+                 If None, the `default_implementator` is used.
+        '''
+        if impl is None:
+            impl = self.default_implementator
+        assert impl is not None, "default_implementator is None?"
+        if not self.is_declaration:
+            raise ReimplementationError(self)
+        self.__impl = impl(self)
+        return self.__impl
+
+    @property
+    def is_declaration(self):
+        return self.__impl is None
+
+    @property
+    def implementation(self):
+        if self.is_declaration:
+            raise MissingImplementation(self)
+        return self.__impl
+
+class IntrinsicDefinition(Definition):
+    _kind_ = 'intr'
+
+    def __str__(self):
+        if self.return_type:
+            retty = '-> %s' % self.return_type
+        else:
+            retty = ''
+        return "intrinsic %s(%s) %s" % (self.name,
+                                       ', '.join(self.args),
+                                       retty)
+
+class Intrinsic(Callable):
+    _definition_type_ = IntrinsicDefinition
+
+class Function(Callable):
+    _definition_type_ = FunctionDefinition
 
 class BasicBlock(object):
     '''
