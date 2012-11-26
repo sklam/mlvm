@@ -7,12 +7,17 @@ class AlreadyDefinedError(Exception):
     pass
 
 class Compiler(object):
-    def __init__(self, impl, backends):
+    def __init__(self, impl, backends, wrapper=None):
         '''
-        impl --- implementationo of the compiler. Ownership is obtained
+        impl --- implementation of the compiler. Ownership is obtained.
+        wrapper -- wrapper generator.
         '''
         assert backends, "No backends are defined"
         self.__impl = impl # owned
+        if wrapper is None:
+            self.__wrapper = DummyWrapperGenerator()
+        else:
+            self.__wrapper = wrapper # owned
         self.__backends = backends
         self.__symlib = {}
 
@@ -30,8 +35,10 @@ class Compiler(object):
         unit = codegen.link(unit)
 
         realname = self.__impl.add_function(unit)
+        self.__wrapper.add_function(codegen, funcdef, unit)
 
-        self.__symlib[(funcdef.name, tuple(funcdef.args))] = realname
+        key = (funcdef.name, tuple(funcdef.args))
+        self.__symlib[key] = realname
 
     def has_function(self, funcdef):
         return (funcdef.name, tuple(funcdef.args)) in self.__symlib
@@ -89,3 +96,7 @@ class CompilerInterface(object):
         '''
         raise NotImplementedError
 
+
+class DummyWrapperGenerator(object):
+    def add_function(self, codegen, funcdef, unit):
+        pass
