@@ -172,8 +172,23 @@ class Context(object):
 
     def add_function(self, name):
         fn = Function(self, name)
+        if name in self.__functions:
+            print self.__functions
+            raise AleadyDefinedError(name)
         self.__functions[name] = fn
         return fn
+
+    def get_or_insert_intrinsic(self, name):
+        try:
+            return self.get_intrinsic(name)
+        except:
+            return self.add_intrinsic(name)
+
+    def get_or_insert_function(self, name):
+        try:
+            return self.get_function(name)
+        except KeyError:
+            return self.add_function(name)
 
     def get_intrinsic(self, name):
         return self.__intrinsics[name]
