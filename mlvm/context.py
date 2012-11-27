@@ -141,7 +141,10 @@ class TypeSystem(object):
         return self.__iconvtable
 
     def is_type_valid(self, ty):
-        return ty in self.__types
+        if ty in self.__types:
+            return True
+        else:
+            return self.is_type_valid(ty[:-1])
 
     def get_subtype_count(self, generic_type):
         return self.__generics[generic_type]

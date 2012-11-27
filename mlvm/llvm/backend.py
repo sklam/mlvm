@@ -1,7 +1,7 @@
 __all__ = ['LLVMBackend']
 
 import ctypes
-from ctypes import c_float, c_double, c_size_t
+from ctypes import c_float, c_double, c_size_t, POINTER
 
 import llvm.core as lc
 import llvm.passes as lp
@@ -23,6 +23,10 @@ class SimpleTypeImplementation(TypeImplementation):
     @property
     def _type(self):
         return self.__type
+
+    @property
+    def _ctype(self):
+        return self.__ctype
 
     def ctype(self, backend):
         return self.__ctype
@@ -51,14 +55,34 @@ class SimpleTypeImplementation(TypeImplementation):
         assert storage.type.pointee == value.type, (storage.type, value.type)
         builder.store(value, storage)
 
+    def reference(self, backend, builder, value):
+        assert value.type.pointee
+        return value
+
+    def load(self, backend, builder, storage):
+        return builder.load(storage)
+
+    def store(self, backend, builder, value, storage):
+        builder.store(value, storage)
+
 class IntegerImplementation(SimpleTypeImplementation):
-    def constant(self, builder, value):
+    def constant(self, backend, value):
         return lc.Constant.int(self._type, value)
 
 class RealImplementation(SimpleTypeImplementation):
-    def constant(self, builder, value):
+    def constant(self, backend, value):
         return lc.Constant.real(self._type, value)
 
+class PointerTypeImplementation(SimpleTypeImplementation):
+    def __init__(self, pointee):
+        name = pointee.name + '*'
+        ty = lc.Type.pointer(pointee._type)
+        cty = POINTER(pointee._ctype)
+        super(PointerTypeImplementation, self).__init__(name, ty, cty)
+
+    @property
+    def pointee(self):
+        return self.__pointee
 
 class LLVMTranslator(object):
     def __init__(self, backend, funcdef):
@@ -161,6 +185,18 @@ class LLVMTranslator(object):
                 elif op.name == 'return':
                     retval = self.valuemap[op.operands[0]].use(builder)
                     builder.ret(retval)
+                elif op.name == 'ref':
+                    ptr = self.valuemap[op.operands[0]].reference(builder)
+                    tyimpl = self.__get_ty_impl(op.type)
+                    self.valuemap[op] = Value(self.backend, tyimpl, ptr)
+                elif op.name == 'load':
+                    ptr = self.valuemap[op.operands[0]]
+                    val = ptr.load(builder)
+                    self.valuemap[op] = Value(self.backend, val.type, val)
+                elif op.name == 'store':
+                    val = self.valuemap[op.operands[0]].use(builder)
+                    ptr = self.valuemap[op.operands[1]]
+                    ptr.store(builder, val)
                 else:
                     opimpl = self.backend.get_operation_implementation(op)
                     operands = [self.valuemap[x].use(builder)
@@ -501,6 +537,9 @@ class LLVMBackend(Backend):
         lfunc.verify()
         # optimize
         self.__intrlibfpm.run(lfunc)
+
+    def _get_pointer_implementation(self, pointee):
+        return PointerTypeImplementation(pointee)
 
     def __to_llvm_type(self, ty, context):
         tyimpl = self.get_type_implementation(ty)

@@ -125,6 +125,11 @@ class Builder(object):
         self.basic_block.operations.append(op)
         return op
 
+    def ref(self, val):
+        op = Reference(val)
+        self.basic_block.operations.append(op)
+        return op
+
     def coerce(self, lhs, rhs):
         if lhs.type == rhs.type:
             return lhs, rhs
@@ -167,6 +172,22 @@ class Builder(object):
     def rem(self, lhs, rhs):
         lhs, rhs = self.coerce(lhs, rhs)
         op = Rem(lhs, rhs)
+        self.basic_block.operations.append(op)
+        return op
+
+    def load(self, ptr):
+        """Load a pointer
+        """
+        op = Load(ptr)
+        self.basic_block.operations.append(op)
+        return op
+
+    def store(self, val, ptr):
+        """Store val to ptr
+        """
+        pointee = ptr.type[:-1]
+        val = self.cast(val, pointee)
+        op = Store(val, ptr)
         self.basic_block.operations.append(op)
         return op
 

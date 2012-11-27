@@ -34,6 +34,10 @@ class Cast(Operation):
         super(Cast, self).__init__('cast.%s.%s' % (value.type, totype),
                                    totype, (value,))
 
+class Reference(Operation):
+    def __init__(self, value):
+        super(Reference, self).__init__('ref', value.type + '*', (value,))
+
 class BinaryOperation(Operation):
     pass
 
@@ -155,3 +159,12 @@ class Compare(BinaryOperation):
 class Assign(Operation):
     def __init__(self, val, var):
         super(Assign, self).__init__('assign', None, (val, var))
+
+class Store(Operation):
+    def __init__(self, val, ptr):
+        super(Store, self).__init__('store', None, (val, ptr))
+
+class Load(Operation):
+    def __init__(self, ptr):
+        super(Load, self).__init__('load', ptr.type[:-1], (ptr,))
+

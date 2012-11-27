@@ -33,8 +33,17 @@ class TypeImplementation(object):
 
     def ctype_epilog(self, backend, builder, value):
         pass
+
+    def reference(self, backend, builder, value):
+        raise NotImplementedError
+
+    def load(self, backend, builder, storage):
+        raise NotImplementedError
+
+    def store(self, backend, builder, value, storage):
+        raise NotImplementedError
     
-    def constant(self, builder, value):
+    def constant(self, backend, value):
         raise NotImplementedError
 
     def allocate(self, backend, builder):
@@ -61,7 +70,6 @@ class TypeImplementation(object):
     def epilog(self, backend, builder, arg, value, attrs):
         pass
 
-
 class Value(object):
     '''
     Use to aid translation from MLVM IR to LLVM IR
@@ -86,6 +94,13 @@ class Value(object):
     def use(self, builder):
         return self.value
 
+    def load(self, builder):
+        ptr = self.use(builder)
+        return self.type.load(self.backend, builder, ptr)
+
+    def store(self, builder, value):
+        self.type.store(self.backend, builder, value, self.use(builder))
+
 class Variable(Value):
     def __init__(self, backend, tyimpl, builder):
         value = tyimpl.allocate(backend, builder)
@@ -99,6 +114,9 @@ class Variable(Value):
 
     def deallocate(self, builder):
         self.type.deallocate(self.backend, builder, self.value)
+
+    def reference(self, builder):
+        return self.type.reference(self.backend, builder, self.value)
 
 class Argument(Variable):
     def __init__(self, backend, tyimpl, builder, arg, attrs):
@@ -156,6 +174,9 @@ class Backend(object):
         '''
         raise NotImplementedError
 
+    def _get_pointer_implementation(self, pointee):
+        raise NotImplementedError
+
     #
     # Should NOT override
     #
@@ -169,6 +190,7 @@ class Backend(object):
         ext.install_to_backend(self)
 
     def implement_intrinsic(self, name, retty, argtys, impl):
+        """Add an operation implementation"""
         key = (name, tuple(argtys))
         assert key not in self.__intrimpl
         self.__intrimpl[key] = impl
@@ -193,9 +215,14 @@ class Backend(object):
         try:
             return self.__typeimpl[ty]
         except KeyError:
+            if ty.endswith('*'):
+                pointee = self.get_type_implementation(ty[:-1])
+                return self._get_pointer_implementation(pointee)
             raise TypeUnimplementedError(ty)
 
     def implement_operation(self, operator, operand_types, impl):
+        '''Add or override an operation implementation
+        '''
         self.__opimpl[(operator, tuple(operand_types))] = impl
 
     def list_implemented_operation(self):
