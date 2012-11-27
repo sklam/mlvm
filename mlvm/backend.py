@@ -53,7 +53,7 @@ class TypeImplementation(object):
         return value
 
     def postcall(self, backend, builder, value):
-        return value
+        pass
 
     def prolog(self, backend, builder, value, attrs):
         return value

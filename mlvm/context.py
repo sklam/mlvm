@@ -348,12 +348,13 @@ class FunctionImplementation(object):
         buf = []
 
         namemap = {}
-        template = "{:>20s}\t{:<20s}"
+        template = "{:>20s} {:>10s} {:s},"
 
         buf.append('define %s %s (' % (self.return_type or 'void', self.name))
         for i, arg in enumerate(self.args):
             name = namemap[id(arg)] = arg.name or ("%%arg_%d" % i)
-            buf.append(template.format(arg.type, name))
+            attrs = ' '.join(list(arg.attributes))
+            buf.append(template.format(arg.type, attrs, name))
 
         buf.append('    )')
         buf.append('{')

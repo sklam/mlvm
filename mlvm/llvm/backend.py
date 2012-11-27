@@ -165,7 +165,19 @@ class LLVMTranslator(object):
                     opimpl = self.backend.get_operation_implementation(op)
                     operands = [self.valuemap[x].use(builder)
                                 for x in op.operands]
+                    callop = op.name.startswith('call.')
+                    if callop: # precall
+                        operands = [self.valuemap[v].type.precall(
+                                            self.__backend, builder, x)
+                                    for x, v in zip(operands, op.operands)]
                     tmp = opimpl(builder, *operands)
+
+                    if callop: # postcall
+                        for x, v in zip(operands, op.operands):
+                            self.valuemap[v].type.postcall(self.__backend,
+                                                           builder,
+                                                           x)
+
                     if op.type:
                         tyimpl = self.__get_ty_impl(op.type)
                         assert tyimpl.value(self) == tmp.type
