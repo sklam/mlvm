@@ -197,27 +197,10 @@ class LLVMTranslator(object):
                     val = self.valuemap[op.operands[0]].use(builder)
                     ptr = self.valuemap[op.operands[1]]
                     ptr.store(builder, val)
+                elif op.name.startswith('call.'):
+                    self.__build_call(builder, op)
                 else:
-                    opimpl = self.backend.get_operation_implementation(op)
-                    operands = [self.valuemap[x].use(builder)
-                                for x in op.operands]
-                    callop = op.name.startswith('call.')
-                    if callop: # precall
-                        operands = [self.valuemap[v].type.precall(
-                                            self.__backend, builder, x)
-                                    for x, v in zip(operands, op.operands)]
-                    tmp = opimpl(builder, *operands)
-
-                    if callop: # postcall
-                        for x, v in zip(operands, op.operands):
-                            self.valuemap[v].type.postcall(self.__backend,
-                                                           builder,
-                                                           x)
-
-                    if op.type:
-                        tyimpl = self.__get_ty_impl(op.type)
-                        assert tyimpl.value(self) == tmp.type
-                        self.valuemap[op] = Value(self.backend, tyimpl, tmp)
+                    self.__build_other(builder, op)
 
             if irbb.terminator: # close basicblock
                 term = irbb.terminator
@@ -246,6 +229,53 @@ class LLVMTranslator(object):
                 else:
                     self.__teardown(builder)
                     builder.ret_void()
+
+    def __build_call(self, builder, op):
+        operands = [self.valuemap[x].use(builder)
+                    for x in op.operands]
+        callop = op.name.startswith('call.')
+
+        operands = [self.valuemap[v].type.precall(self.__backend, builder, x)
+                    for x, v in zip(operands, op.operands)]
+
+        if op.name.startswith('call.intr'):
+            build = self.__backend._build_intrinsic_call(op)
+        elif op.name.startswith('call.func'):
+            build = self.__backend._build_function_call(op)
+
+        tmp = build(builder, *operands)
+
+        for x, v in zip(operands, op.operands):
+            self.valuemap[v].type.postcall(self.__backend,
+                                           builder,
+                                           x)
+
+        if op.type:
+            tyimpl = self.__get_ty_impl(op.type)
+            assert tyimpl.value(self) == tmp.type
+            self.valuemap[op] = Value(self.backend, tyimpl, tmp)
+
+    def __build_other(self, builder, op):
+        opimpl = self.backend.get_operation_implementation(op)
+        operands = [self.valuemap[x].use(builder)
+                    for x in op.operands]
+        callop = op.name.startswith('call.')
+        if callop: # precall
+            operands = [self.valuemap[v].type.precall(
+                                                      self.__backend, builder, x)
+                        for x, v in zip(operands, op.operands)]
+        tmp = opimpl(builder, *operands)
+
+        if callop: # postcall
+            for x, v in zip(operands, op.operands):
+                self.valuemap[v].type.postcall(self.__backend,
+                                               builder,
+                                               x)
+
+        if op.type:
+            tyimpl = self.__get_ty_impl(op.type)
+            assert tyimpl.value(self) == tmp.type
+            self.valuemap[op] = Value(self.backend, tyimpl, tmp)
 
     def __teardown(self, builder):
         epilog = [i for i in self.valuemap.values()

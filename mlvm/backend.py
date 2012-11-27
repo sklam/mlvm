@@ -160,21 +160,16 @@ class Backend(object):
     def link(self, unit):
         raise NotImplementedError
 
-
-    def _build_intrinsic_call(self, op):
-        raise NotImplementedError
-
-
-    def _build_function_call(self, op):
-        raise NotImplementedError
-
     def _implement_intrinsic(self, name, retty, argtys, impl):
-        '''
+        '''Perform the work for implementing an intrinsic.
+
         Called in implement_intrinsic
         '''
         raise NotImplementedError
 
     def _get_pointer_implementation(self, pointee):
+        '''Returns the pointer type implementation given a pointee.
+        '''
         raise NotImplementedError
 
     #
@@ -234,11 +229,7 @@ class Backend(object):
                 opname, fromtype, totype = op.name.split('.')
                 return fromtype[-1] == totype[-1] and fromtype[-1] == '*'
             return False
-        if op.name.startswith('call.intr'):
-            return self._build_intrinsic_call(op)
-        elif op.name.startswith('call'):
-            return self._build_function_call(op)
-        elif is_ptr2ptr(op):
+        if is_ptr2ptr(op):
             return self._build_pointer_cast(op)
         operator = op.name
         operand_types = tuple(i.type for i in op.operands)
