@@ -169,3 +169,51 @@ def sample_call_function_2(context):
     
     return funcdef
 
+def sample_pointer_function_1(context):
+    function = context.add_function("foo")
+
+    retty = 'int32'
+    argtys = ('int32*', 'int32')
+
+    funcdef = function.add_definition(retty, argtys)
+
+    logger.debug("mlvm def\n%s", funcdef)
+
+    impl = funcdef.implement()
+
+    arg0, arg1 = impl.args
+    arg0.attributes.add('in')
+    arg0.attributes.add('out')
+    arg1.attributes.add('in')
+
+    block = impl.append_basic_block()
+
+    b = Builder(block)
+    retval = b.load(arg0)
+    b.store(arg1, arg0)
+    b.ret(retval)
+
+    return funcdef
+
+def sample_pointer_cast_function_1(context):
+    function = context.add_function("foo")
+
+    retty = 'float*'
+    argtys = ('int32*', )
+
+    funcdef = function.add_definition(retty, argtys)
+
+    logger.debug("mlvm def\n%s", funcdef)
+
+    impl = funcdef.implement()
+
+    arg0 = impl.args[0]
+    arg0.attributes.add('in')
+
+    block = impl.append_basic_block()
+
+    b = Builder(block)
+    retval = b.cast(arg0, retty)
+    b.ret(retval)
+
+    return funcdef

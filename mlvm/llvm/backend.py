@@ -490,7 +490,6 @@ class LLVMBackend(Backend):
         factory(IntegerImplementation, 'address',
                 lc.Type.int(self.address_width * 8), c_size_t)
 
-
     def _build_intrinsic_call(self, op):
         argtys = op.callee.args
         fname = 'mlvm.intrinsic.%s.%s' % (op.callee.name, '.'.join(argtys))
@@ -514,6 +513,14 @@ class LLVMBackend(Backend):
             callintr = builder.call(decl, args)
             return callintr
         return _build
+
+    def _build_pointer_cast(self, op):
+            toty = op.type
+            tyimpl = self.get_type_implementation(toty)
+            def _build(builder, arg):
+                assert arg.type.pointee
+                return builder.bitcast(arg, tyimpl.value(self))
+            return _build
 
     def _implement_intrinsic(self, name, retty, argtys, impl):
         '''

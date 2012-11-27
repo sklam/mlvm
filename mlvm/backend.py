@@ -229,10 +229,17 @@ class Backend(object):
         return self.__opimpl.items()
 
     def get_operation_implementation(self, op):
+        def is_ptr2ptr(op):
+            if op.name.startswith('cast.'):
+                opname, fromtype, totype = op.name.split('.')
+                return fromtype[-1] == totype[-1] and fromtype[-1] == '*'
+            return False
         if op.name.startswith('call.intr'):
             return self._build_intrinsic_call(op)
         elif op.name.startswith('call'):
             return self._build_function_call(op)
+        elif is_ptr2ptr(op):
+            return self._build_pointer_cast(op)
         operator = op.name
         operand_types = tuple(i.type for i in op.operands)
         return self.__opimpl[(operator, operand_types)]
