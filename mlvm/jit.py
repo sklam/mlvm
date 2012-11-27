@@ -37,42 +37,47 @@ class JIT(object):
     def opt(self):
         return self.__opt
 
-    def compile(self, funcdef, backend='', **attrs):
+    def compile(self, funcdef, backend='', attrs={}):
         '''Compile a function-definition using a specific backend.
         
         **attrs --- attributes for build_function
         '''
         if self.manager.has_function(funcdef):
-            callable = self.manager.get_function(funcdef)
+            wrapper, ctype = self.manager.get_function(funcdef)
         else:
             codegen = self.__backends[backend]
             unit = codegen.compile(funcdef)
             unit = codegen.link(unit)
-            callable = self.manager.build_function(codegen, funcdef, unit,
-                                                   **attrs)
-        return JITFunction(self, callable, funcdef)
+            wrapper, ctype = self.manager.build_function(codegen, funcdef,
+                                                            unit, attrs)
+        return JITFunction(self, wrapper, ctype, funcdef)
 
 class JITFunction(object):
-    def __init__(self, parent, callable, funcdef):
+    def __init__(self, parent, wrapper, ctype, funcdef):
         self.__parent = weakref.proxy(parent) # does not own
-        self.__callable = callable
+        self.__wrapper = wrapper
+        self.__ctype = ctype
 
     @property
     def name(self):
         return funcdef.name
 
     @property
+    def ctype(self):
+        return self.__ctype
+
+    @property
     def parent(self):
         return self.__parent
 
     def __call__(self, *args):
-        return self.__callable(*args)
+        return self.__wrapper(*args)
 
     def __eq__(self, rhs):
         '''Two instances are equal if their parent is the same and
         the callable is the same.
         '''
-        return self.parent is rhs.parent and self.__callable is rhs.__callable
+        return self.parent is rhs.parent and self.__wrapper is rhs.__wrapper
 
 class ExecutionManagerInterface(object):
     '''
@@ -92,4 +97,8 @@ class ExecutionManagerInterface(object):
         raise NotImplementedError
 
     def build_function(self, codegen, funcdef, unit, **attrs):
+        '''Returns a wrapper and a ctype function.
+        The wrapper handles conversion of python objects to ctypes.
+        The handler is implemented in TypeImplementation.
+        '''
         raise NotImplementedError

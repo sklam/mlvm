@@ -32,8 +32,8 @@ class LLVMExecutionManager(ExecutionManagerInterface):
         k = (funcdef.name, tuple(funcdef.args))
         return self.__symlib[k]
 
-    def build_function(self, backend, funcdef, lfunc, gil=True):
-        '''Returns a ctype CFUNCTYPE.
+    def build_function(self, backend, funcdef, lfunc, attrs):
+        '''Returns a wrapper and a ctype CFUNCTYPE.
 
             lfunc --- Ownership of lfunc is obtained.
             Callee should no longer use this object.
@@ -47,11 +47,11 @@ class LLVMExecutionManager(ExecutionManagerInterface):
         # get function by name
         func = self.__fatmod.get_function_named(lfunc.name)
         # build wrapper
-        callable = self.build_wrapper(backend, funcdef, func, gil=gil)
+        wrapper, callable = self.build_wrapper(backend, funcdef, func, attrs)
 
         # remember JIT'ed functions
-        self.__symlib[(funcdef.name, tuple(argtys))] = callable
-        return callable
+        self.__symlib[(funcdef.name, tuple(argtys))] = wrapper, callable
+        return wrapper, callable
 
     def build_wrapper(self, backend, funcdef, callee, gil=True):
         # get address of funciton; forces JIT
@@ -78,5 +78,5 @@ class LLVMExecutionManager(ExecutionManagerInterface):
             retval = callable(*args)
             return rettyimpl.ctype_return(backend, retval)
 
-        return _wrapper
+        return _wrapper, callable
 
