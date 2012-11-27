@@ -83,18 +83,6 @@ class LLVMTranslator(object):
     def bbmap(self):
         return self.__bbmap
 
-    def __mangle_symbol(self, name):
-        def _repl(c):
-            return '_%X_' % ord(c)
-
-        def _proc(name):
-            for c in name:
-                if not c.isalpha() and not c.isdigit():
-                    yield _repl(c)
-                else:
-                    yield c
-        return ''.join(_proc(name))
-
     def translate(self):
         module = self.__build_module()
         func = self.__build_function(module)
@@ -113,8 +101,8 @@ class LLVMTranslator(object):
         return lc.Module.new("mod_%s" % name)
 
     def __build_function(self, module):
-        rawname = '%s.%s' % (self.funcdef.name, '.'.join(self.funcdef.args))
-        name = self.__mangle_symbol(rawname)
+        name = self.__backend.mangle_function(self.funcdef.name,
+                                              self.funcdef.args)
         lretty = self.__to_llvm_type(self.funcdef.return_type, 'return_type')
         largtys = [self.__to_llvm_type(x, 'argument')
                    for x in self.funcdef.args]
@@ -458,14 +446,21 @@ class LLVMBackend(Backend):
     def _build_intrinsic_call(self, op):
         argtys = op.callee.args
         fname = 'mlvm.intrinsic.%s.%s' % (op.callee.name, '.'.join(argtys))
+        return self._build_call(fname, op.callee.return_type, argtys)
+
+    def _build_function_call(self, op):
+        argtys = op.callee.args
+        fname = self.mangle_function(op.callee.name, argtys)
+        return self._build_call(fname, op.callee.return_type, argtys)
+
+    def _build_call(self, fname, retty, argtys):
         def _build(builder, *args):
             assert len(args) == len(argtys)
             module = _builder_module(builder)
 
             largtys = [self.__to_llvm_type(x, 'argument')
                        for x in argtys]
-            lretty = self.__to_llvm_type(op.callee.return_type,
-                                        'return_type')
+            lretty = self.__to_llvm_type(retty, 'return_type')
             fnty = lc.Type.function(lretty, largtys)
             decl = module.get_or_insert_function(fnty, fname)
             callintr = builder.call(decl, args)
@@ -499,6 +494,24 @@ class LLVMBackend(Backend):
         tyimpl = self.get_type_implementation(ty)
         impl = getattr(tyimpl, context)
         return impl(self)
+
+    @classmethod
+    def mangle_symbol(cls, name):
+        def _repl(c):
+            return '_%X_' % ord(c)
+
+        def _proc(name):
+            for c in name:
+                if not c.isalpha() and not c.isdigit():
+                    yield _repl(c)
+                else:
+                    yield c
+        return ''.join(_proc(name))
+
+    @classmethod
+    def mangle_function(cls, name, argtys):
+        joint = '%s.%s' % (name, '.'.join(argtys))
+        return cls.mangle_symbol(joint)
 
 def _builder_module(builder):
     module = builder.basic_block.function.module

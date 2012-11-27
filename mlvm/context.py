@@ -226,6 +226,15 @@ class Callable(object):
         defn = self.__defs[key] = self._definition_type_(self, retty, argtys)
         return defn
 
+    def get_or_insert_definition(self, retty, argtys):
+        if self.has_definition(argtys):
+            return self.get_definition(argtys)
+        else:
+            return self.add_definition(argtys)
+
+    def get_definition(self, argtys):
+        return self.__defs[argtys]
+
     def has_definition(self, argtys):
         return tuple(argtys) in self.__defs
 

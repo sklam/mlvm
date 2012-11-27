@@ -146,6 +146,10 @@ class Backend(object):
     def _build_intrinsic_call(self, op):
         raise NotImplementedError
 
+
+    def _build_function_call(self, op):
+        raise NotImplementedError
+
     def _implement_intrinsic(self, name, retty, argtys, impl):
         '''
         Called in implement_intrinsic
@@ -158,7 +162,7 @@ class Backend(object):
     def list_extra_libraries(self):
         return list(self.__extralib)
 
-    def add_extra_libraries(self, lib):
+    def add_extra_library(self, lib):
         self.__extralib.append(lib)
 
     def install(self, ext):
@@ -201,8 +205,7 @@ class Backend(object):
         if op.name.startswith('call.intr'):
             return self._build_intrinsic_call(op)
         elif op.name.startswith('call'):
-            print op.callee
-            raise NotImplementedError
+            return self._build_function_call(op)
         operator = op.name
         operand_types = tuple(i.type for i in op.operands)
         return self.__opimpl[(operator, operand_types)]

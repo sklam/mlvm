@@ -9,7 +9,7 @@ def sample_array_function_1(context, arraytype):
     context --- must have installed mlvm.llvm.ext.arraytype
     arraytype --- element type must be real number.
     '''
-    function = context.add_function("foo")
+    function = context.get_or_insert_function("foo")
 
     retty = 'int32'
     argtys = (arraytype, arraytype, arraytype, 'int32')
@@ -56,7 +56,7 @@ def sample_array_function_2(context, arraytype):
     context --- must have installed mlvm.llvm.ext.arraytype
     arraytype --- element type must be int type.
     '''
-    function = context.add_function("foo")
+    function = context.get_or_insert_function("foo")
 
     retty = 'int32'
     argtys = (arraytype, arraytype, arraytype, 'int32')
@@ -95,4 +95,77 @@ def sample_array_function_2(context, arraytype):
     b.ret(idx)
     return funcdef
 
+
+def sample_call_function_1(context):
+    '''
+    Declares float sin(float) and define float foo(float x) which
+    simply return sin(x)
+    '''
+
+    # delcare a float sin(float)
+    sin = context.get_or_insert_function("sin")
+
+    retty = 'float'
+    argtys = ('float', )
+    funcdef = sin.add_definition(retty, argtys)
+
+    function = context.add_function("foo")
+
+    # define a float foo(float x) { return sin(x); }
+    retty = 'float'
+    argtys = ('float', )
+
+    funcdef = function.add_definition(retty, argtys)
+
+    logger.debug("mlvm def\n%s", funcdef)
+
+    impl = funcdef.implement()
+
+    arg0 = impl.args[0]
+    arg0.attributes.add('in')
+
+    block = impl.append_basic_block()
+
+    b = Builder(block)
+    retval = b.call(sin, arg0)
+    b.ret(retval)
+
+    return funcdef
+
+
+def sample_call_function_2(context):
+    '''
+        Declares int32 incr(int32) and define int32 foo(int32 x) which
+        simply return incr(x)
+        '''
+
+    # delcare a int32 sin(int32)
+    incr = context.get_or_insert_function("incr")
+
+    retty = 'int32'
+    argtys = ('int32', )
+    funcdef = incr.add_definition(retty, argtys)
+
+    function = context.add_function("foo")
+
+    # define a int32 foo(int32 x) { return sin(x); }
+    retty = 'int32'
+    argtys = ('int32', )
+
+    funcdef = function.add_definition(retty, argtys)
+
+    logger.debug("mlvm def\n%s", funcdef)
+
+    impl = funcdef.implement()
+
+    arg0 = impl.args[0]
+    arg0.attributes.add('in')
+
+    block = impl.append_basic_block()
+
+    b = Builder(block)
+    retval = b.call(incr, arg0)
+    b.ret(retval)
+    
+    return funcdef
 
