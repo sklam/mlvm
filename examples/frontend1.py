@@ -5,7 +5,7 @@
 
 from pprint import pprint
 from mlvm.ir import *
-from mlvm import irutil
+
 
 def frontend_example():
 
@@ -56,9 +56,6 @@ def frontend_example():
 
     print "float -> fruit:", context.type_system.can_implicit_cast("float",
                                                                     "fruit")
-
-
-    return context
 
 if __name__ == '__main__':
     frontend_example()
