@@ -1,5 +1,8 @@
 import weakref
+import re
 from .value import *
+
+_re_type = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 class InvalidTypeName(Exception):
     pass
@@ -54,12 +57,9 @@ def _build_implicit_cast_table():
             cset = conv[s] = conv.get(s, set())
             cset.add(d)
 
-    # allow address to cast to and from any integer type
-
+    # allow address to cast from any integer type
     for group in [_builtin_signed_int, _builtin_unsigned_int]:
         for intty in group:
-            cset = conv['address'] = conv.get('address', set())
-            cset.add(intty)
             cset = conv[intty] = conv.get(intty, set())
             cset.add('address')
 
@@ -154,6 +154,8 @@ class TypeSystem(object):
         return list(self.__types)
 
     def add_type(self, type):
+        if not _re_type.match(type):
+            raise InvalidTypeName(type)
         return self.__types.add(type)
 
 class Context(object):
