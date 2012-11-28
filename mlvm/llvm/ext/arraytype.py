@@ -75,7 +75,7 @@ def install_to_context(context):
         context.type_system.add_type(arraytype)
 
         array_load.add_definition(elemtype, [arraytype, 'address'])
-        array_store.add_definition(None, [arraytype, elemtype, 'address'])
+        array_store.add_definition("void", [arraytype, elemtype, 'address'])
 
 def install_to_backend(backend):
     for elemtype in ELEMENT_TYPES:
@@ -87,7 +87,7 @@ def install_to_backend(backend):
                                     (arraytype, 'address'),
                                     array_load_impl)
         backend.implement_intrinsic('array_store',
-                                    None,
+                                    "void",
                                     (arraytype, elemtype, 'address'),
                                     array_store_impl)
 

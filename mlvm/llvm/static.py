@@ -42,6 +42,7 @@ class LLVMCWrapperGenerator(object):
 
         c_float  : 'float',
         c_double : 'double',
+        None     : 'void',
         }
     
     def __init__(self):

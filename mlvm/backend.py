@@ -28,12 +28,6 @@ class TypeImplementation(object):
     def ctype_return(self, backend, value):
         return value
 
-    def ctype_prolog(self, backend, builder, value):
-        return value
-
-    def ctype_epilog(self, backend, builder, value):
-        pass
-
     def reference(self, backend, builder, value):
         raise NotImplementedError
 

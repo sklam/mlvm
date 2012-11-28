@@ -106,14 +106,18 @@ class Builder(object):
         self.basic_block.operations.append(op)
         return op
 
-    def ret(self, val):
-        ts = self.context.type_system
-        retty = self.basic_block.implementation.return_type
-        if val.type != retty:
-            if ts.can_implicit_cast(val.type, retty):
-                val = self.cast(val, retty)
-            else:
-                raise InvalidCast(val.type, retty)
+    def ret(self, val=None):
+        '''
+        val --- if None (omitted), return void
+        '''
+        if val is not None:
+            ts = self.context.type_system
+            retty = self.basic_block.implementation.return_type
+            if val.type != retty:
+                if ts.can_implicit_cast(val.type, retty):
+                    val = self.cast(val, retty)
+                else:
+                    raise InvalidCast(val.type, retty)
         op = Return(val)
         self.basic_block.terminator = op
         return op

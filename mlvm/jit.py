@@ -57,10 +57,11 @@ class JITFunction(object):
         self.__parent = weakref.proxy(parent) # does not own
         self.__wrapper = wrapper
         self.__ctype = ctype
+        self.__funcdef = weakref.proxy(funcdef) # does not own
 
     @property
-    def name(self):
-        return funcdef.name
+    def definition(self):
+        return self.__funcdef
 
     @property
     def ctype(self):

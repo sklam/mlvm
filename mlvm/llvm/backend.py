@@ -74,10 +74,10 @@ class RealImplementation(SimpleTypeImplementation):
         return lc.Constant.real(self._type, value)
 
 class PointerTypeImplementation(SimpleTypeImplementation):
-    def __init__(self, pointee):
+    def __init__(self, backend, pointee):
         name = pointee.name + '*'
-        ty = lc.Type.pointer(pointee._type)
-        cty = POINTER(pointee._ctype)
+        ty = lc.Type.pointer(pointee.value(backend))
+        cty = POINTER(pointee.ctype(backend))
         super(PointerTypeImplementation, self).__init__(name, ty, cty)
 
     @property
@@ -183,8 +183,11 @@ class LLVMTranslator(object):
                     storage.assign(builder,
                                    self.valuemap[op.operands[0]].use(builder))
                 elif op.name == 'return':
-                    retval = self.valuemap[op.operands[0]].use(builder)
-                    builder.ret(retval)
+                    if op.value is None:
+                        builder.ret_void()
+                    else:
+                        retval = self.valuemap[op.operands[0]].use(builder)
+                        builder.ret(retval)
                 elif op.name == 'ref':
                     ptr = self.valuemap[op.operands[0]].reference(builder)
                     tyimpl = self.__get_ty_impl(op.type)
@@ -214,17 +217,18 @@ class LLVMTranslator(object):
                 else:
                     assert isinstance(term, Return)
                     if term.value is None:
-                        assert impl.return_type == None
+                        assert impl.return_type == "void"
+                        builder.ret_void()
                     else:
                         retval = self.valuemap[term.value].use(builder)
                         self.__teardown(builder)
                         builder.ret(retval)
 
             else: # default pass through
-                if impl.return_type:
+                if impl.return_type != "void":
                     assert i + 1 < len(impl.basic_blocks), \
                         "Missing return statement in the last block of %s" \
-                            % funcdef
+                            % self.__funcdef
                     builder.branch(self.bbmap[impl.basic_blocks[i + 1]])
                 else:
                     self.__teardown(builder)
@@ -513,7 +517,7 @@ class LLVMBackend(Backend):
             factory(IntegerImplementation, 'int%d' % bits, ty, scty)
             factory(IntegerImplementation, 'uint%d' % bits, ty, ucty)
 
-        factory(SimpleTypeImplementation, None, lc.Type.void(), None)
+        factory(SimpleTypeImplementation, "void", lc.Type.void(), None)
         factory(IntegerImplementation, 'pred', lc.Type.int(1), NotImplemented)
         factory(RealImplementation, 'float', lc.Type.float(), c_float)
         factory(RealImplementation, 'double', lc.Type.double(), c_double)
@@ -576,7 +580,7 @@ class LLVMBackend(Backend):
         self.__intrlibfpm.run(lfunc)
 
     def _get_pointer_implementation(self, pointee):
-        return PointerTypeImplementation(pointee)
+        return PointerTypeImplementation(self, pointee)
 
     def __to_llvm_type(self, ty, context):
         tyimpl = self.get_type_implementation(ty)

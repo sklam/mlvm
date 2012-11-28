@@ -158,11 +158,11 @@ class Compare(BinaryOperation):
 
 class Assign(Operation):
     def __init__(self, val, var):
-        super(Assign, self).__init__('assign', None, (val, var))
+        super(Assign, self).__init__('assign', "void", (val, var))
 
 class Store(Operation):
     def __init__(self, val, ptr):
-        super(Store, self).__init__('store', None, (val, ptr))
+        super(Store, self).__init__('store', "void", (val, ptr))
 
 class Load(Operation):
     def __init__(self, ptr):

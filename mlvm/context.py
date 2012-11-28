@@ -383,7 +383,7 @@ class FunctionImplementation(object):
         for i, bb in enumerate(self.basic_blocks):
             buf.append("block_%d:" % i)
             for op in bb.operations:
-                if op.type is not None:
+                if op.type != "void":
                     name = namemap[id(op)] = "%%%d" % len(namemap)
                     uid = "%s =" % name
                     value_type = '; %s' % op.type
@@ -463,7 +463,7 @@ class IntrinsicDefinition(Definition):
     _kind_ = 'intr'
 
     def __str__(self):
-        if self.return_type:
+        if self.return_type != 'void':
             retty = '-> %s' % self.return_type
         else:
             retty = ''
@@ -519,7 +519,7 @@ class Branch(object):
     def destination(self):
         return self.__dest
 
-class Return(Operation):
+class Return(object):
     def __init__(self, value):
         self.__value = value
 
