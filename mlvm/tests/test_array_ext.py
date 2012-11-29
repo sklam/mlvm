@@ -113,5 +113,44 @@ class TestArrayExtension(unittest.TestCase):
         Gold = (A + B) * 123
         self.assertTrue(np.allclose(Gold, C))
 
+    def test_array_add(self):
+        context = Context(TypeSystem())
+        context.install(ext_arraytype)
+
+        func = context.add_function("foo")
+        funcdef = func.add_definition("void",
+                                      ("array_float",
+                                       "array_float",
+                                       "array_float",
+                                       "array_float",
+                                       "address"))
+        impl = funcdef.implement()
+        b = Builder(impl.append_basic_block())
+
+
+        A, B, C, D, N = impl.args
+        A.attributes.add('in')
+        B.attributes.add('in')
+        C.attributes.add('in')
+        C.attributes.add('out')
+        b.array_add(A, B, C, N)
+        b.array_add(A, B, D, N)
+
+        print impl
+        backend = LLVMBackend(opt=LLVMBackend.OPT_MAXIMUM)
+        backend.install(ext_arraytype)
+
+        lfunc = backend.compile(funcdef)
+        lfunc = backend.link(lfunc)
+        print lfunc.module
+
+        manager = LLVMExecutionManager(opt=LLVMExecutionManager.OPT_MAXIMUM)
+
+        jit = JIT(manager, {'': backend})
+        function = jit.compile(funcdef)
+
+        
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -8,11 +8,12 @@
 #
 
 from mlvm.backend import TypeImplementation
-from mlvm.utils import MEMORYVIEW_DATA_OFFSET
+from mlvm.utils import MEMORYVIEW_DATA_OFFSET, ADDRESS_WIDTH
 from mlvm.context import (_builtin_unsigned_int,
                           _builtin_signed_int,
                           _builtin_real)
-from llvm.core import Type, Builder
+from llvm.core import (Type, Builder, Constant, ICMP_ULT,
+                       MetaData, MetaDataString, ATTR_NO_ALIAS)
 from ctypes import *
 
 class ArrayType(TypeImplementation):
@@ -63,12 +64,14 @@ class ArrayType(TypeImplementation):
     def prolog(self, backend, builder, value, attrs):
         return value
 
-ELEMENT_TYPES = _builtin_unsigned_int + _builtin_signed_int + \
-                _builtin_real + ['address']
+INTEGER_TYPES = _builtin_unsigned_int + _builtin_signed_int + ['address']
+REAL_TYPES = _builtin_real
+ELEMENT_TYPES = INTEGER_TYPES + REAL_TYPES
 
 def install_to_context(context):
     array_load = context.add_intrinsic("array_load")
     array_store = context.add_intrinsic("array_store")
+    array_add = context.add_intrinsic("array_add")
 
     for elemtype in ELEMENT_TYPES:
         arraytype = 'array_%s' % elemtype
@@ -76,6 +79,8 @@ def install_to_context(context):
 
         array_load.add_definition(elemtype, [arraytype, 'address'])
         array_store.add_definition("void", [arraytype, elemtype, 'address'])
+        array_add.add_definition("void",
+                                 [arraytype, arraytype, arraytype, 'address'])
 
 def install_to_backend(backend):
     for elemtype in ELEMENT_TYPES:
@@ -87,9 +92,24 @@ def install_to_backend(backend):
                                     (arraytype, 'address'),
                                     array_load_impl)
         backend.implement_intrinsic('array_store',
-                                    "void",
+                                    'void',
                                     (arraytype, elemtype, 'address'),
                                     array_store_impl)
+    for elemtype in INTEGER_TYPES:
+        arraytype = 'array_%s' % elemtype
+        backend.implement_intrinsic(
+                                'array_add',
+                                'void',
+                                (arraytype, arraytype, arraytype, 'address'),
+                                array_arith_impl(Builder.add, elemtype))
+
+    for elemtype in REAL_TYPES:
+        arraytype = 'array_%s' % elemtype
+        backend.implement_intrinsic(
+                                'array_add',
+                                'void',
+                                (arraytype, arraytype, arraytype, 'address'),
+                                array_arith_impl(Builder.fadd, elemtype))
 
 def array_load_impl(lfunc):
     bb = lfunc.append_basic_block('entry')
@@ -106,3 +126,62 @@ def array_store_impl(lfunc):
     builder.store(value, elem)
     builder.ret_void()
 
+
+def array_arith_impl(operator, elemtype):
+    def _array_arith_impl(lfunc):
+        intp = Type.int(ADDRESS_WIDTH * 8)
+        ZERO = Constant.int(intp, 0)
+        ONE = Constant.int(intp, 1)
+
+        bbentry = lfunc.append_basic_block('entry')
+        bbbody = lfunc.append_basic_block('body')
+        bbexit = lfunc.append_basic_block('exit')
+        
+        builder = Builder.new(bbentry)
+        step = ONE
+
+        builder.branch(bbbody)
+
+        builder.position_at_end(bbbody)
+        
+        idx = builder.phi(intp, name='idx')
+        idx.add_incoming(ZERO, bbentry)
+
+        lary, rary, dary, elemct  = lfunc.args
+        lary.add_attribute(ATTR_NO_ALIAS)
+        rary.add_attribute(ATTR_NO_ALIAS)
+        dary.add_attribute(ATTR_NO_ALIAS)
+        
+
+        tbaaroot = MetaData.get(lfunc.module,
+                                [MetaDataString.get(lfunc.module, "mlvm.tbaa")])
+        tbaa_dst = MetaData.get(lfunc.module,
+                                [MetaDataString.get(lfunc.module, elemtype),
+                                 tbaaroot,
+                                 ZERO])
+        tbaa_src = MetaData.get(lfunc.module,
+                                [MetaDataString.get(lfunc.module,
+                                                    "const %s" % elemtype),
+                                 tbaaroot,
+                                 ONE])
+
+        lval = builder.load(builder.gep(lary, [idx]))
+        lval.set_metadata("tbaa", tbaa_src)
+        rval = builder.load(builder.gep(rary, [idx]))
+        rval.set_metadata("tbaa", tbaa_src)
+
+        res = operator(builder, lval, rval)
+
+        store = builder.store(res, builder.gep(dary, [idx]))
+        store.set_metadata("tbaa", tbaa_dst)
+
+
+        idx_next = builder.add(idx, step, name='idx_next')
+        idx.add_incoming(idx_next, bbbody)
+
+        pred = builder.icmp(ICMP_ULT, idx, elemct)
+        builder.cbranch(pred, bbbody, bbexit)
+
+        builder.position_at_end(bbexit)
+        builder.ret_void()
+    return _array_arith_impl

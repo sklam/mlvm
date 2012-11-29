@@ -132,6 +132,7 @@ class LLVMTranslator(object):
                    for x in self.funcdef.args]
         fty = lc.Type.function(lretty, largtys)
         func = module.add_function(fty, name)
+
         return func
 
     def __implement(self, func):
@@ -358,6 +359,8 @@ class LLVMBackend(Backend):
         for lib in self.list_extra_libraries():
             module.link_in(lib.clone())
 
+        module.verify()
+                
         # module-level optimization
         self.__pm.run(module)
         return llfunc
