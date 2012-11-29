@@ -12,8 +12,8 @@ from mlvm.utils import MEMORYVIEW_DATA_OFFSET, ADDRESS_WIDTH
 from mlvm.context import (_builtin_unsigned_int,
                           _builtin_signed_int,
                           _builtin_real)
-from llvm.core import (Type, Builder, Constant, ICMP_ULT,
-                       MetaData, MetaDataString, ATTR_NO_ALIAS)
+import llvm.core as lc
+from llvm import tbaa
 from ctypes import *
 
 class ArrayType(TypeImplementation):
@@ -49,7 +49,7 @@ class ArrayType(TypeImplementation):
     def value(self, backend):
         elemimpl = backend.get_type_implementation(self.element)
         elem = elemimpl.value(backend)
-        return Type.pointer(elem)
+        return lc.Type.pointer(elem)
 
     def argument(self, backend):
         return self.value(backend)
@@ -101,7 +101,7 @@ def install_to_backend(backend):
                                 'array_add',
                                 'void',
                                 (arraytype, arraytype, arraytype, 'address'),
-                                array_arith_impl(Builder.add, elemtype))
+                                array_arith_impl(lc.Builder.add, elemtype))
 
     for elemtype in REAL_TYPES:
         arraytype = 'array_%s' % elemtype
@@ -109,18 +109,18 @@ def install_to_backend(backend):
                                 'array_add',
                                 'void',
                                 (arraytype, arraytype, arraytype, 'address'),
-                                array_arith_impl(Builder.fadd, elemtype))
+                                array_arith_impl(lc.Builder.fadd, elemtype))
 
 def array_load_impl(lfunc):
     bb = lfunc.append_basic_block('entry')
-    builder = Builder.new(bb)
+    builder = lc.Builder.new(bb)
     array, idx = lfunc.args
     elem = builder.gep(array, [idx])
     builder.ret(builder.load(elem))
 
 def array_store_impl(lfunc):
     bb = lfunc.append_basic_block('entry')
-    builder = Builder.new(bb)
+    builder = lc.Builder.new(bb)
     array, value, idx = lfunc.args
     elem = builder.gep(array, [idx])
     builder.store(value, elem)
@@ -129,15 +129,15 @@ def array_store_impl(lfunc):
 
 def array_arith_impl(operator, elemtype):
     def _array_arith_impl(lfunc):
-        intp = Type.int(ADDRESS_WIDTH * 8)
-        ZERO = Constant.int(intp, 0)
-        ONE = Constant.int(intp, 1)
+        intp = lc.Type.int(ADDRESS_WIDTH * 8)
+        ZERO = lc.Constant.int(intp, 0)
+        ONE = lc.Constant.int(intp, 1)
 
         bbentry = lfunc.append_basic_block('entry')
         bbbody = lfunc.append_basic_block('body')
         bbexit = lfunc.append_basic_block('exit')
         
-        builder = Builder.new(bbentry)
+        builder = lc.Builder.new(bbentry)
         step = ONE
 
         builder.branch(bbbody)
@@ -148,38 +148,30 @@ def array_arith_impl(operator, elemtype):
         idx.add_incoming(ZERO, bbentry)
 
         lary, rary, dary, elemct  = lfunc.args
-        lary.add_attribute(ATTR_NO_ALIAS)
-        rary.add_attribute(ATTR_NO_ALIAS)
-        dary.add_attribute(ATTR_NO_ALIAS)
-        
+        lary.add_attribute(lc.ATTR_NO_ALIAS)
+        rary.add_attribute(lc.ATTR_NO_ALIAS)
+        dary.add_attribute(lc.ATTR_NO_ALIAS)
 
-        tbaaroot = MetaData.get(lfunc.module,
-                                [MetaDataString.get(lfunc.module, "mlvm.tbaa")])
-        tbaa_dst = MetaData.get(lfunc.module,
-                                [MetaDataString.get(lfunc.module, elemtype),
-                                 tbaaroot,
-                                 ZERO])
-        tbaa_src = MetaData.get(lfunc.module,
-                                [MetaDataString.get(lfunc.module,
-                                                    "const %s" % elemtype),
-                                 tbaaroot,
-                                 ONE])
+        tbaaroot = tbaa.TBAABuilder.new(lfunc.module, 'mlvm.tbaa')
+        tbaa_type = tbaaroot.get_node(elemtype)
+        tbaa_consttype = tbaaroot.get_node(' '.join(["const", elemtype]),
+                                           tbaa_type, const=True)
 
         lval = builder.load(builder.gep(lary, [idx]))
-        lval.set_metadata("tbaa", tbaa_src)
+        lval.set_metadata("tbaa", tbaa_consttype)
         rval = builder.load(builder.gep(rary, [idx]))
-        rval.set_metadata("tbaa", tbaa_src)
+        rval.set_metadata("tbaa", tbaa_consttype)
 
         res = operator(builder, lval, rval)
 
         store = builder.store(res, builder.gep(dary, [idx]))
-        store.set_metadata("tbaa", tbaa_dst)
+        store.set_metadata("tbaa", tbaa_type)
 
 
         idx_next = builder.add(idx, step, name='idx_next')
         idx.add_incoming(idx_next, bbbody)
 
-        pred = builder.icmp(ICMP_ULT, idx, elemct)
+        pred = builder.icmp(lc.ICMP_ULT, idx, elemct)
         builder.cbranch(pred, bbbody, bbexit)
 
         builder.position_at_end(bbexit)
