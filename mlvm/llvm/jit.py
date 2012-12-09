@@ -18,7 +18,7 @@ class LLVMExecutionManager(ExecutionManagerInterface):
         self.__opt = opt
         self.__fatmod = Module.new('mlvm.jit.%X' % id(self))
         self.__engine = EngineBuilder.new(self.__fatmod).opt(opt).create()
-        self.__symlib = {} # stores (name, argtys) -> callable
+        self.__symlib = {} # stores (name, argtys) -> (wrapper, callable)
 
     @property
     def opt(self):

@@ -302,6 +302,12 @@ class LLVMBackend(Backend):
     OPT_MAXIMUM = OPT_AGGRESSIVE
 
     def __init__(self, address_width=None, opt=OPT_NORMAL):
+        '''
+        address_width --- Address width in bytes.  If it is None, it 
+                          will be set to match the current machine.
+        opt --- Optimization level.  Controls what LLVM optimization
+                passes to run on the generated module.
+        '''
         super(LLVMBackend, self).__init__()
         if not address_width: # auto-detect
             address_width = ADDRESS_WIDTH
