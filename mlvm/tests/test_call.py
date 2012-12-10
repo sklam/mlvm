@@ -46,7 +46,7 @@ class TestCall(unittest.TestCase):
         # test the function
         X = np.random.random(100.)
         expect = np.sin(X)
-        got = np.vectorize(function)(X)
+        got = np.vectorize(lambda X: function(X))(X)
         self.assertTrue(np.allclose(expect, got))
 
     def test_call_function_2(self):
@@ -79,7 +79,7 @@ class TestCall(unittest.TestCase):
         # test the function
         X = np.arange(100)
         expect = X + 1
-        got = np.vectorize(function)(X)
+        got = np.vectorize(lambda X: function(X))(X)
         self.assertTrue(np.allclose(expect, got))
 
 if __name__ == '__main__':
