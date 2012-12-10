@@ -37,10 +37,10 @@ class JIT(object):
     def opt(self):
         return self.__opt
 
-    def compile(self, funcdef, backend='', attrs={}):
+    def compile(self, funcdef, backend='', attrs={}, gil=True):
         '''Compile a function-definition using a specific backend.
         
-        **attrs --- attributes for build_function
+        attrs --- attributes for build_function
         '''
         if self.manager.has_function(funcdef):
             wrapper, ctype = self.manager.get_function(funcdef)
@@ -49,7 +49,7 @@ class JIT(object):
             unit = codegen.compile(funcdef)
             unit = codegen.link(unit)
             wrapper, ctype = self.manager.build_function(codegen, funcdef,
-                                                            unit, attrs)
+                                                         unit, attrs, gil)
         return JITFunction(self, wrapper, ctype, funcdef)
 
 class JITFunction(object):
@@ -97,7 +97,7 @@ class ExecutionManagerInterface(object):
     def get_function(self, funcdef):
         raise NotImplementedError
 
-    def build_function(self, codegen, funcdef, unit, **attrs):
+    def build_function(self, codegen, funcdef, unit, attrs, gil):
         '''Returns a wrapper and a ctype function.
         The wrapper handles conversion of python objects to ctypes.
         The handler is implemented in TypeImplementation.
